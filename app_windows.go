@@ -954,6 +954,59 @@ func runApp() {
 		_ = setTaskbarBadge(hwnd, count)
 	})
 
+	// System tray (M4-05). Actions that touch the page are marshalled via
+	// w.Dispatch; Open respects the app lock (never reveals a hidden window).
+	startWindowsTray(nativeTrayActions{
+		Open: func() {
+			visible, _, _ := procIsWindowVisible.Call(hwnd)
+			if visible == 0 {
+				return // locked or explicitly hidden: the lock prompt is the only way back
+			}
+			procShowNormal.Call(hwnd, swRestore)
+			procSetFgWindow.Call(hwnd)
+		},
+		Privacy: func() {
+			w.Dispatch(func() {
+				w.Eval("if (window.togglePrivacyMode) window.togglePrivacyMode();")
+			})
+		},
+		Lock: func() {
+			requestNativeAppLock(hwnd)
+		},
+		Notifications: func(currentlyEnabled bool) bool {
+			return setNotificationsEnabled(!currentlyEnabled)
+		},
+		NotificationsEnabled: getNotificationsEnabled,
+		Settings: func() {
+			w.Dispatch(func() {
+				w.Eval("if (window.showSettingsModal) window.showSettingsModal();")
+			})
+		},
+		Quit: func() {
+			trayQuitRequested.Store(true)
+			stopWindowsTray()
+			procPostMessage.Call(hwnd, wmClose, 0, 0)
+		},
+		Tooltip: func() string {
+			snapshot := applicationState.Snapshot()
+			text := "WhatsApp Desk"
+			if snapshot.Locked {
+				return text + " - locked"
+			}
+			if !snapshot.NotificationsOn {
+				return text + " - notifications off"
+			}
+			return text
+		},
+	}, embeddedIconPNG)
+
+	// Minimize/close-to-tray requires the main window hook; disabled by
+	// default in settings.
+	if settings := loadSettings(); settings.MinimizeToTray || settings.CloseToTray {
+		installMainWindowTrayHook(hwnd)
+	}
+	defer stopWindowsTray()
+
 	w.Init(getInitScript(userAgent))
 	if !showStartupNativeAppLock(hwnd) {
 		return

@@ -26,6 +26,10 @@ type AppSettings struct {
 	SpellCheckEnabled    bool   `json:"spell_check_enabled"`
 	SpellCheckLang       string `json:"spell_check_lang"`
 	BlurAvatars          bool   `json:"blur_avatars"`
+	// MinimizeToTray/CloseToTray keep the session alive in the tray instead
+	// of minimizing/closing the window; both default off (M4-05).
+	MinimizeToTray bool `json:"minimize_to_tray"`
+	CloseToTray    bool `json:"close_to_tray"`
 	// LastCrashNotified is the unix time of the crash log last surfaced to
 	// the user via the issue reporter, so the startup nudge fires once.
 	LastCrashNotified int64 `json:"last_crash_notified"`
