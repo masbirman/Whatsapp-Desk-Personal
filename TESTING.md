@@ -1,0 +1,127 @@
+# Testing and Validation Strategy
+
+## 1. Evidence Labels
+
+- **VERIFIED:** The specific test/build/runtime action was run and passed in the named environment.
+- **PARTIALLY VERIFIED:** Some code paths or environments were checked; scope and omissions are stated.
+- **NOT RUNTIME VERIFIED:** Source/test design exists or static inspection was done, but the target app/OS/live WhatsApp DOM was not run.
+
+Go unit tests, DOM fixtures, OS cross-builds, desktop runtime, and live WhatsApp Web are separate evidence. A source-string assertion never counts as live runtime validation.
+
+## 2. Test Layers
+
+### 2.1 Go Unit Tests
+
+Cover platform-independent policy and storage:
+
+- current `AppSettings` defaults/validation and migration into schema store;
+- atomic replace, backup recovery, malformed JSON, unknown schema, idempotent migration;
+- path traversal, absolute path, normal path, symlink/dangling symlink and allowed-open directory;
+- lock/recovery KDF salt generation/unique salts, correct/incorrect credential and recovery code, parameter bounds, attempt backoff, reset preserving WebView profile;
+- profile merge/effective privacy policy and locked-state floor;
+- notification decision table, sender/body redaction and quiet hours around midnight/timezone;
+- adapter identity validation/provenance DTOs;
+- local pin ordering/no silent cap, bookmark minimal data, labels/notes validation;
+- notification driver failure mapping, bridge enum/size/path/url rejection;
+- updater fork host/path/redirect/asset/checksum/size/architecture validation.
+
+Use temporary test directories and injected clocks/randomness/network drivers. Tests must not access real user WhatsApp profile data.
+
+### 2.2 JavaScript and DOM Fixture Tests
+
+Extend the existing `testdata/init_script_harness.js` pattern or introduce a maintained JS test harness without adding a runtime app dependency. Fixtures should represent supported current patterns, not attempt to clone all of WhatsApp.
+
+For every adapter semantic method, test:
+
+1. preferred selector found;
+2. fallback found when preferred selector absent;
+3. missing target returns no target with diagnostic reason;
+4. two plausible targets return ambiguous/unresolved rather than first-match wrong action;
+5. added subtree updates only relevant observers;
+6. listener/observer teardown and hidden/scroll throttling;
+7. localized accessible labels used only as bounded fallbacks.
+
+Feature DOM tests cover each privacy surface/reveal mode, app lock overlay interaction, notification event normalization, unread title fallback, chat/message identity, currently open status image/video, custom CSS isolation and recovery, and Controls at minimum window layout. These fixtures do not prove compatibility with live WhatsApp.
+
+### 2.3 Security Tests
+
+Use `SECURITY.md` gates. Add adversarial cases for bridge-originated invalid data, HTML and CSS injection, filename traversal, symlink redirects, page-crafted open paths, notification content leakage, PIN verifier exposure, malformed store KDF parameters, updater wrong owner/redirect and missing/mismatched checksums. Assert the page bridge exposes no credential verification method; Windows/Linux native lock dialogs collect and verify credentials outside the WebView.
+
+Assert sensitive text does not appear in logs, crash reports, notification driver calls when redacted, or default bookmark records.
+
+## 3. Windows Validation
+
+### Static/build
+
+- `gofmt` changed Go files.
+- `go test ./...` with vendored dependencies when environment supports Go/toolchain.
+- Windows x64 cross-build and `go vet`/static checks where possible; state if cgo/toolchain prevents it.
+- Validate resource IDs, AppUserModel identity, notification activation, Shell tray callbacks, DPI assets, taskbar fallback, and cleanup paths through unit/test seams.
+
+### Runtime checklist (Windows 10/11)
+
+- WebView2 installed/missing, profile persistence across restart, normal QR/login, lock does not logout.
+- Toast enabled/denied, sender/body/generic, group/private, focused/background, quiet hours, locked; activation foregrounds app.
+- Tray open/privacy/lock/notification/settings/quit, minimize/close to tray, restore, Explorer restart/re-add icon, no tray mode.
+- Taskbar unread appears/updates/clears; numeric overlay or fallback behavior is visually verified.
+- Startup toggle add/remove/query, single-instance activation, lock on startup, monitor/window restore.
+- Password/PIN entered in native lock UI; correct, incorrect, timeout, backoff, reset/recovery; JS bridge/custom CSS cannot submit or hide/bypass lock.
+- Download image/video/status, path chooser, duplicate, unsafe path, OS notification failure.
+
+Until run on actual Windows, every Windows runtime item remains NOT RUNTIME VERIFIED even if cross-build passes.
+
+## 4. Ubuntu/Debian Linux Validation
+
+### Build/static
+
+- Run Go tests with vendored dependencies.
+- Build against target WebKitGTK 4.0 and/or 4.1 configuration as claimed by package.
+- Validate pkg-config/deb dependencies, XDG autostart Exec quoting/identity, icon install, `notify-send` fallback and DBus methods.
+
+### Runtime checklist
+
+- Ubuntu/Debian target version, architecture, desktop shell and X11/Wayland recorded.
+- Login/session persistence across close/reopen, normal QR flow, lock transitions preserve session.
+- Privacy selectors/reveal modes with chat list, archived chat, private/group message, images/video/sticker/viewer and voice note fixture/live observation.
+- Desktop notifications allow/deny/missing daemon, privacy modes, lock, focus, groups, quiet hours.
+- StatusNotifier watcher/menu exists and absent; action dispatch and tray exit/restore; notification indicator.
+- X11 window position and Wayland size-only restore; startup entry on/off; single instance.
+- Story Save/Save As, image/video, missing media URL, path traversal and duplicate.
+- Custom CSS invalid/global/remote/import cases and native reset path.
+
+Ubuntu runtime does not prove Debian package behavior; each target/package claim needs at least one corresponding verification or a stated limitation.
+
+## 5. macOS Scope
+
+No macOS feature work, build, packaging, notification, menu bar, app-lock, or runtime test is planned. Shared changes should retain source compatibility with the existing `app_darwin.go` at minimum. Do not claim a macOS build/test as a gate for this project.
+
+## 6. Live WhatsApp DOM Validation
+
+Live testing requires an authorized logged-in test account/window; never use production personal chat data in automated fixtures or log it. Record WebView engine/version, WhatsApp page date/build if observable, target selector, expected behavior, result and screenshot only if it contains no private data.
+
+Live DOM validation is required for any feature that depends on a current chat row, message, media viewer, status/story viewer, or notification mechanism before that feature is called runtime verified. If no safe test account/session is available, mark those criteria NOT RUNTIME VERIFIED and document impacted features.
+
+## 7. Manual Regression Matrix
+
+| Area | Regression checks |
+|---|---|
+| Session | Sign-in, restart, upgrade/store migration, lock/unlock, no logout |
+| Privacy | Every selector surface, reveal mode, profile change, stale selector recovery |
+| Lock | Startup/manual/idle/minimize/tray trigger, wrong/correct credential, backoff, reset |
+| Notification | Full/redacted/generic/off and no leak in locked state |
+| Desktop | Tray actions, window restore, unread updates, startup, OS permission failures |
+| Productivity | Persistent pins/bookmarks, unresolved target, no wrong chat, deletion, no body copy |
+| Story | Explicit current viewer only, save image/video, safe file path, no background scan |
+| Appearance | compact/density/hide/reset, scale/minimum size, custom CSS recovery |
+| Updater | Only personal fork, checksum, platform asset, no upstream overwrite |
+
+## 8. Validation Record — Milestone 3
+
+- **VERIFIED — Go tests and Linux build:** `go test -count=1 ./...` and `go build` passed in a Debian Trixie container with Go 1.26.8, Node.js 20.19.2, GTK 3, and WebKitGTK 4.1 (2.52.6). The build used the repository's WebKitGTK 4.1-to-4.0 pkg-config alias expected by its Linux script. Dependencies were installed in the temporary container, not the host workspace.
+- **VERIFIED — Windows x64 cross-build:** `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build` passed in the same Linux container.
+- **VERIFIED — JavaScript/DOM fixtures:** injected JavaScript parsed and Node DOM adapter fixtures passed for preferred/fallback/missing/ambiguous selectors, including each registered privacy surface.
+- **NOT RUNTIME VERIFIED:** no Windows desktop session or Ubuntu/Debian GUI session was used. Native prompt accessibility, lock concealment, actual idle/minimize events, WebView session preservation, and live WhatsApp selectors still need manual checks. Tray lock has not been wired and is deferred to its planned integration work.
+
+## 9. Release Validation Record
+
+For every milestone report, list command or manual action, OS/version/architecture, result, and label. Record unavailable tests explicitly. A release candidate must include Windows and Linux result sets separately; no cross-platform generalization from one OS is allowed.
