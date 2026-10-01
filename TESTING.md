@@ -124,6 +124,14 @@ Live DOM validation is required for any feature that depends on a current chat r
 - **VERIFIED — Ubuntu desktop runtime, idle trigger (M3-06):** with `idle_timeout_seconds: 12`, the native watcher re-locked the app after an untouched period and the unlock cycle completed again.
 - **NOT RUNTIME VERIFIED:** Windows native dialog behavior (cross-build only); minimize trigger on a real window manager; manual Ctrl+Shift+L page shortcut against live WhatsApp Web; recovery-code unlock through the native dialogs; live WhatsApp DOM privacy surfaces. Tray lock wiring remains deferred to the tray milestone (M4).
 
-## 9. Release Validation Record
+## 9. Validation Record — Milestone 4
+
+- **VERIFIED — Go tests, Linux build, Windows x64 cross-build + vet:** every M4 commit was gated on `go test -count=1 ./...`, `go build`, `CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build` and `go vet` in the same Debian Trixie container.
+- **VERIFIED — Ubuntu runtime, notification pipeline (M4-01/M4-03):** a live GNOME desktop notification was delivered through the real controller + policy + notify-send driver path; the daemon ping check passed.
+- **VERIFIED — Ubuntu session bus, tray menu (M4-06):** with the built binary running (no tray host installed), the `com.canonical.dbusmenu` object was exercised with `gdbus`: GetLayout returned the full item tree, GetGroupProperties returned labels plus the live notifications toggle-state, AboutToShow/AboutToShowGroup/EventGroup answered, and a clicked Event toggled the notification policy with persistent store effect (True→False→True) without crashing. No-tray-host degradation observed safe.
+- **NOT RUNTIME VERIFIED (Windows):** toast sound/activation behavior, numeric taskbar overlay rendering, tray icon/menu interactions, and minimize/close-to-tray lock enforcement — all gated by cross-build, vet, and source-string tests only.
+- **NOT RUNTIME VERIFIED:** Control Center tray card interaction (UI rendered code reviewed; not driven in a live page), recovery-code flow in the native dialogs, and live WhatsApp DOM surfaces.
+
+## 10. Release Validation Record
 
 For every milestone report, list command or manual action, OS/version/architecture, result, and label. Record unavailable tests explicitly. A release candidate must include Windows and Linux result sets separately; no cross-platform generalization from one OS is allowed.

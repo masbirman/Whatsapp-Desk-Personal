@@ -85,7 +85,7 @@ OWASP's current password storage guidance recommends Argon2id and lists a baseli
 
 - Lock policy is owned in native Go state; page activity cannot unlock the app.
 - A native Windows/Linux modal lock window/dialog blocks the main window and covers the WebView until the native verifier approves the credential. The lock credential is never collected or verified in page JavaScript, and no page bridge method accepts it.
-- Notify policy observes lock state before native delivery. On lock, purge queued unredacted notification payloads and use generic text.
+- Notify policy observes lock state before native delivery. On lock, purge queued unredacted notification payloads and use generic text. (Implemented in M4-01: a single Go resolution point applies the master switch, locked floor, quiet hours, focus behavior, and sender/body redaction before the OS driver; the stored-policy corruption path degrades to content-free presentation.)
 - Lock/unlock, startup lock, minimize-to-tray, and profile switches never clear WebView cookies, localStorage, IndexedDB, or website data.
 - Keep a native recovery route if WebView DOM/CSS fails. Do not provide an unlock bypass through tray, debug bridge, custom CSS, or app reopen.
 
