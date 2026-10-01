@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -55,48 +54,20 @@ func getSettingsFilePath() string {
 		}
 		baseDir = filepath.Join(configDir, "WhatsAppDesk")
 	}
-	_ = os.MkdirAll(baseDir, 0755)
+	_ = os.MkdirAll(baseDir, 0700)
 	return filepath.Join(baseDir, "settings.json")
 }
 
 func loadSettings() *AppSettings {
-	s := &AppSettings{
-		DownloadDir:          getDefaultDownloadDir(),
-		NotifyOnDownload:     true,
-		NotificationsEnabled: true,
-		Theme:                "dark",
-		SpellCheckEnabled:    true,
-		SpellCheckLang:       "auto",
-	}
-	data, err := os.ReadFile(getSettingsFilePath())
-	if err != nil {
-		return s
-	}
-	_ = json.Unmarshal(data, s)
-	if strings.TrimSpace(s.DownloadDir) == "" {
-		s.DownloadDir = getDefaultDownloadDir()
-	}
-	// A tampered or misguided settings.json must never turn the download
-	// folder into a persistence primitive (e.g. ~/.config/autostart): fall
-	// back to the default instead of writing attacker-controlled bytes there.
-	if err := validateDownloadDir(s.DownloadDir); err != nil {
-		s.DownloadDir = getDefaultDownloadDir()
-	}
-	if strings.TrimSpace(s.Theme) == "" {
-		s.Theme = "dark"
-	}
-	if s.SpellCheckLang == "" {
-		s.SpellCheckLang = "auto"
-	}
-	return s
+	s := applicationState.Settings()
+	return &s
 }
 
 func saveSettings(s *AppSettings) error {
-	data, err := json.MarshalIndent(s, "", "  ")
-	if err != nil {
-		return err
+	if s == nil {
+		return fmt.Errorf("settings are required")
 	}
-	return os.WriteFile(getSettingsFilePath(), data, 0644)
+	return applicationState.SaveSettings(*s)
 }
 
 func getNotificationsEnabled() bool {
@@ -104,9 +75,12 @@ func getNotificationsEnabled() bool {
 }
 
 func setNotificationsEnabled(enabled bool) bool {
-	s := loadSettings()
-	s.NotificationsEnabled = enabled
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.NotificationsEnabled = enabled
+	})
+	if err != nil {
+		return applicationState.Settings().NotificationsEnabled
+	}
 	return s.NotificationsEnabled
 }
 
@@ -114,9 +88,12 @@ func saveTheme(theme string) string {
 	if theme != "dark" && theme != "light" && theme != "system" {
 		theme = "dark"
 	}
-	s := loadSettings()
-	s.Theme = theme
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.Theme = theme
+	})
+	if err != nil {
+		return applicationState.Settings().Theme
+	}
 	return s.Theme
 }
 
@@ -151,9 +128,12 @@ func saveDownloadedFile(filename, dataURI string) (string, error) {
 // setOrganizeByMonth persists the monthly-organization preference and returns
 // the effective value.
 func setOrganizeByMonth(on bool) bool {
-	s := loadSettings()
-	s.OrganizeByMonth = on
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.OrganizeByMonth = on
+	})
+	if err != nil {
+		return applicationState.Settings().OrganizeByMonth
+	}
 	return s.OrganizeByMonth
 }
 
@@ -162,9 +142,12 @@ func getSpellCheckEnabled() bool {
 }
 
 func setSpellCheckEnabled(on bool) bool {
-	s := loadSettings()
-	s.SpellCheckEnabled = on
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.SpellCheckEnabled = on
+	})
+	if err != nil {
+		return applicationState.Settings().SpellCheckEnabled
+	}
 	return s.SpellCheckEnabled
 }
 
@@ -173,9 +156,12 @@ func getSpellCheckLang() string {
 }
 
 func setSpellCheckLang(lang string) string {
-	s := loadSettings()
-	s.SpellCheckLang = lang
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.SpellCheckLang = lang
+	})
+	if err != nil {
+		return applicationState.Settings().SpellCheckLang
+	}
 	return s.SpellCheckLang
 }
 
@@ -184,9 +170,12 @@ func getBlurAvatars() bool {
 }
 
 func setBlurAvatars(on bool) bool {
-	s := loadSettings()
-	s.BlurAvatars = on
-	_ = saveSettings(s)
+	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+		current.BlurAvatars = on
+	})
+	if err != nil {
+		return applicationState.Settings().BlurAvatars
+	}
 	return s.BlurAvatars
 }
 

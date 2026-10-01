@@ -121,6 +121,127 @@ static GDBusNodeInfo* g_introspection = NULL;
 static char g_tray_icon_path[512] = {0};
 static int g_tray_visible = 0;
 static int g_unread_count = 0;
+static int g_native_lock_active = 0;
+static gboolean g_lock_window_minimized = FALSE;
+static gint64 g_lock_last_input_us = 0;
+
+static gboolean native_lock_track_event(GtkWidget* widget, GdkEvent* event, gpointer data) {
+	(void)widget; (void)event; (void)data;
+	g_lock_last_input_us = g_get_monotonic_time();
+	return FALSE;
+}
+
+static gboolean native_lock_track_window_state(GtkWidget* widget, GdkEventWindowState* event, gpointer data) {
+	(void)widget; (void)data;
+	g_lock_window_minimized = (event->new_window_state & GDK_WINDOW_STATE_ICONIFIED) != 0;
+	return FALSE;
+}
+
+static void native_lock_watch_window(void* winPtr) {
+	GtkWidget* win = GTK_WIDGET(winPtr);
+	if (!win) return;
+	g_lock_last_input_us = g_get_monotonic_time();
+	gtk_widget_add_events(win, GDK_KEY_PRESS_MASK | GDK_BUTTON_PRESS_MASK | GDK_POINTER_MOTION_MASK | GDK_SCROLL_MASK | GDK_TOUCH_MASK);
+	g_signal_connect(win, "event", G_CALLBACK(native_lock_track_event), NULL);
+	g_signal_connect(win, "window-state-event", G_CALLBACK(native_lock_track_window_state), NULL);
+}
+
+static gint64 native_lock_idle_milliseconds(void) {
+	if (g_lock_last_input_us <= 0) return 0;
+	gint64 elapsed = g_get_monotonic_time() - g_lock_last_input_us;
+	return elapsed > 0 ? elapsed / 1000 : 0;
+}
+
+static int native_lock_is_minimized(void) {
+	return g_lock_window_minimized ? 1 : 0;
+}
+
+static void native_lock_set_window_visible(void* winPtr, int visible) {
+	GtkWidget* win = GTK_WIDGET(winPtr);
+	if (!win) return;
+	g_native_lock_active = visible ? 0 : 1;
+	if (visible) {
+		gtk_widget_show_all(win);
+		gtk_window_present(GTK_WINDOW(win));
+	} else {
+		gtk_widget_hide(win);
+	}
+}
+
+static int native_lock_prompt(void* ownerPtr, const char* title, const char* message, int password, char** result) {
+	GtkWindow* owner = ownerPtr ? GTK_WINDOW(ownerPtr) : NULL;
+	GtkDialogFlags flags = GTK_DIALOG_MODAL;
+	if (owner) flags |= GTK_DIALOG_DESTROY_WITH_PARENT;
+	GtkWidget* dialog = gtk_dialog_new_with_buttons(title, owner, flags,
+		"Cancel", GTK_RESPONSE_CANCEL, "Continue", GTK_RESPONSE_OK, NULL);
+	if (!dialog) return 0;
+	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+	gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
+	GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+	gtk_container_set_border_width(GTK_CONTAINER(content), 18);
+	gtk_box_set_spacing(GTK_BOX(content), 12);
+	GtkWidget* label = gtk_label_new(message);
+	gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+	gtk_label_set_xalign(GTK_LABEL(label), 0.0f);
+	gtk_label_set_selectable(GTK_LABEL(label), TRUE);
+	gtk_box_pack_start(GTK_BOX(content), label, FALSE, FALSE, 0);
+	GtkWidget* entry = gtk_entry_new();
+	gtk_entry_set_visibility(GTK_ENTRY(entry), password ? FALSE : TRUE);
+	gtk_entry_set_max_length(GTK_ENTRY(entry), 128);
+	gtk_entry_set_activates_default(GTK_ENTRY(entry), TRUE);
+	gtk_box_pack_start(GTK_BOX(content), entry, FALSE, FALSE, 0);
+	gtk_dialog_set_default_response(GTK_DIALOG(dialog), GTK_RESPONSE_OK);
+	gtk_widget_show_all(dialog);
+	gtk_widget_grab_focus(entry);
+	int response = gtk_dialog_run(GTK_DIALOG(dialog));
+	if (response == GTK_RESPONSE_OK && result) {
+		const char* value = gtk_entry_get_text(GTK_ENTRY(entry));
+		*result = g_strdup(value ? value : "");
+	}
+	gtk_entry_set_text(GTK_ENTRY(entry), "");
+	gtk_widget_destroy(dialog);
+	return response == GTK_RESPONSE_OK ? 1 : 0;
+}
+
+static int native_lock_choice(void* ownerPtr, const char* title, const char* message, const char* yesLabel, const char* noLabel) {
+	GtkWindow* owner = ownerPtr ? GTK_WINDOW(ownerPtr) : NULL;
+	GtkWidget* dialog = gtk_dialog_new_with_buttons(title, owner, GTK_DIALOG_MODAL,
+		"Cancel", 0, noLabel, 2, yesLabel, 1, NULL);
+	if (!dialog) return 0;
+	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+	gtk_window_set_position(GTK_WINDOW(dialog), GTK_WIN_POS_CENTER);
+	GtkWidget* content = gtk_dialog_get_content_area(GTK_DIALOG(dialog));
+	gtk_container_set_border_width(GTK_CONTAINER(content), 18);
+	GtkWidget* label = gtk_label_new(message);
+	gtk_label_set_line_wrap(GTK_LABEL(label), TRUE);
+	gtk_label_set_selectable(GTK_LABEL(label), TRUE);
+	gtk_box_pack_start(GTK_BOX(content), label, TRUE, TRUE, 8);
+	gtk_widget_show_all(dialog);
+	int response = gtk_dialog_run(GTK_DIALOG(dialog));
+	gtk_widget_destroy(dialog);
+	return response == 1 ? 1 : (response == 2 ? 2 : 0);
+}
+
+static void native_lock_inform(void* ownerPtr, const char* title, const char* message) {
+	GtkWindow* owner = ownerPtr ? GTK_WINDOW(ownerPtr) : NULL;
+	GtkWidget* dialog = gtk_message_dialog_new(owner, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_OK, "%s", message);
+	gtk_window_set_title(GTK_WINDOW(dialog), title);
+	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+	gtk_dialog_run(GTK_DIALOG(dialog));
+	gtk_widget_destroy(dialog);
+}
+
+static int native_lock_recovery_notice(void* ownerPtr, const char* title, const char* message) {
+	GtkWindow* owner = ownerPtr ? GTK_WINDOW(ownerPtr) : NULL;
+	GtkWidget* dialog = gtk_message_dialog_new(owner, GTK_DIALOG_MODAL, GTK_MESSAGE_INFO, GTK_BUTTONS_NONE, "%s", message);
+	gtk_window_set_title(GTK_WINDOW(dialog), title);
+	gtk_window_set_keep_above(GTK_WINDOW(dialog), TRUE);
+	gtk_dialog_add_button(GTK_DIALOG(dialog), "Cancel", 0);
+	gtk_dialog_add_button(GTK_DIALOG(dialog), "I saved the code", 1);
+	int response = gtk_dialog_run(GTK_DIALOG(dialog));
+	gtk_widget_destroy(dialog);
+	return response == 1 ? 1 : 0;
+}
 
 static const gchar tray_introspection_xml[] =
 	"<node>"
@@ -187,6 +308,7 @@ static char g_overlay_icon_name[64] = {0};
 static int g_has_overlay = 0;
 
 static void tray_show_window(void) {
+	if (g_native_lock_active) return;
 	GtkWindow* top = NULL;
 	GList* toplevels = gtk_window_list_toplevels();
 	for (GList* l = toplevels; l != NULL; l = l->next) {
@@ -484,6 +606,82 @@ func applyNativeThemeLinux(theme string) {
 	C.setWhatsAppDeskGTKTheme(mode)
 }
 
+func nativeLockCString(value string) *C.char {
+	return C.CString(value)
+}
+
+func nativeLockFreeCString(value *C.char, clear bool) {
+	if value == nil {
+		return
+	}
+	if clear {
+		C.memset(unsafe.Pointer(value), 0, C.strlen(value))
+	}
+	C.free(unsafe.Pointer(value))
+}
+
+func nativeCredentialPrompt(owner uintptr, title, message string, password bool) ([]byte, bool) {
+	cTitle, cMessage := nativeLockCString(title), nativeLockCString(message)
+	defer nativeLockFreeCString(cTitle, false)
+	defer nativeLockFreeCString(cMessage, false)
+	var output *C.char
+	accepted := C.native_lock_prompt(unsafe.Pointer(owner), cTitle, cMessage, C.int(b2i(password)), &output) != 0
+	if output == nil {
+		return nil, false
+	}
+	defer nativeLockFreeCString(output, true)
+	length := C.strlen(output)
+	value := C.GoBytes(unsafe.Pointer(output), C.int(length))
+	return value, accepted
+}
+
+func nativeTextPrompt(owner uintptr, title, message string) ([]byte, bool) {
+	return nativeCredentialPrompt(owner, title, message, false)
+}
+
+func nativeAskChoice(owner uintptr, title, message, yesLabel, noLabel string) int {
+	cTitle, cMessage := nativeLockCString(title), nativeLockCString(message)
+	cYes, cNo := nativeLockCString(yesLabel), nativeLockCString(noLabel)
+	defer nativeLockFreeCString(cTitle, false)
+	defer nativeLockFreeCString(cMessage, false)
+	defer nativeLockFreeCString(cYes, false)
+	defer nativeLockFreeCString(cNo, false)
+	return int(C.native_lock_choice(unsafe.Pointer(owner), cTitle, cMessage, cYes, cNo))
+}
+
+func nativeInform(owner uintptr, title, message string) {
+	cTitle, cMessage := nativeLockCString(title), nativeLockCString(message)
+	defer nativeLockFreeCString(cTitle, false)
+	defer nativeLockFreeCString(cMessage, false)
+	C.native_lock_inform(unsafe.Pointer(owner), cTitle, cMessage)
+}
+
+func nativeShowRecoveryCode(owner uintptr, code string) bool {
+	message := "Save this one-time recovery code somewhere private. It is shown only once. Use the button only after saving it.\n\n" + code
+	cTitle, cMessage := nativeLockCString("Save recovery code"), nativeLockCString(message)
+	defer nativeLockFreeCString(cTitle, false)
+	defer nativeLockFreeCString(cMessage, true)
+	return C.native_lock_recovery_notice(unsafe.Pointer(owner), cTitle, cMessage) != 0
+}
+
+func nativeSetMainWindowVisible(owner uintptr, visible bool) {
+	C.native_lock_set_window_visible(unsafe.Pointer(owner), C.int(b2i(visible)))
+}
+
+func nativeWindowMinimized(owner uintptr) bool {
+	_ = owner
+	return C.native_lock_is_minimized() != 0
+}
+
+func nativeIdleFor(owner uintptr) time.Duration {
+	_ = owner
+	return time.Duration(C.native_lock_idle_milliseconds()) * time.Millisecond
+}
+
+func startLinuxLockActivityTracking(owner uintptr) {
+	C.native_lock_watch_window(unsafe.Pointer(owner))
+}
+
 func checkSingleInstance() (*os.File, bool) {
 	dataDir := getUserDataDir()
 	lockPath := filepath.Join(dataDir, "app.lock")
@@ -755,6 +953,7 @@ func runApp() {
 		log.Fatalln("Gagal inisialisasi WebKitGTK Webview")
 	}
 	defer w.Destroy()
+	startLinuxLockActivityTracking(uintptr(w.Window()))
 	applyNativeThemeLinux(loadSettings().Theme)
 
 	w.SetTitle(windowTitle)
@@ -763,7 +962,11 @@ func runApp() {
 	// Bind window state saver from JS resize events. The window handle is
 	// passed through so X11 frames can be stored per monitor.
 	_ = w.Bind("saveWindowStateNative", func(width, height int) {
-		saveWindowState(userDataDir, w.Window(), width, height)
+		request, err := newWindowSizeRequest(width, height)
+		if err != nil {
+			return
+		}
+		saveWindowState(userDataDir, w.Window(), request.Width, request.Height)
 	})
 
 	iconPath := ensureAppIconFileLinux(userDataDir)
@@ -774,7 +977,11 @@ func runApp() {
 
 	// Bind native notification bridge
 	_ = w.Bind("sendNativeNotification", func(title, body string) {
-		go showNativeNotification(title, body, iconPath)
+		request, err := newNativeNotificationRequest(title, body)
+		if err != nil {
+			return
+		}
+		go showNativeNotification(request.Title, request.Body, iconPath)
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
@@ -787,15 +994,20 @@ func runApp() {
 
 	// Bind external link handler (xdg-open)
 	_ = w.Bind("openExternalLink", func(rawURL string) {
-		if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
-			go func() {
-				_ = exec.Command("xdg-open", rawURL).Start()
-			}()
+		request, err := newExternalLinkRequest(rawURL)
+		if err != nil {
+			return
 		}
+		go func() { _ = exec.Command("xdg-open", request.URL).Start() }()
 	})
 
 	// Bind dock badge -> StatusNotifierItem overlay icon (unread count)
 	_ = w.Bind("updateDockBadge", func(badge string) {
+		request, err := newUnreadBadgeRequest(badge)
+		if err != nil {
+			return
+		}
+		badge = request.Value
 		count := 0
 		if strings.TrimSpace(badge) != "" {
 			fmt.Sscanf(strings.TrimSpace(badge), "%d", &count)
@@ -833,7 +1045,7 @@ func runApp() {
 
 	// Bind download, preview, and settings handlers
 	_ = w.Bind("saveDownloadedFileNative", func(filename, dataURI string) string {
-		path, err := saveDownloadedFile(filename, dataURI)
+		path, err := saveDownloadedFileFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -841,7 +1053,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("previewDocumentNative", func(filename, dataURI string) string {
-		path, err := previewDocument(filename, dataURI)
+		path, err := previewDocumentFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -849,7 +1061,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("openFileNative", func(filePath string) bool {
-		return openFileInDefaultApp(filePath)
+		return openFileFromBridge(filePath)
 	})
 
 	// Lazy-load SheetJS library for spreadsheet preview
@@ -909,7 +1121,11 @@ func runApp() {
 	})
 
 	_ = w.Bind("setAppThemeNative", func(theme string) string {
-		saved := saveTheme(theme)
+		request, err := newThemeChangeRequest(theme)
+		if err != nil {
+			return loadSettings().Theme
+		}
+		saved := saveTheme(request.Theme)
 		applyNativeThemeLinux(saved)
 		return saved
 	})
@@ -925,13 +1141,29 @@ func runApp() {
 		return getSpellCheckLang()
 	})
 	_ = w.Bind("setSpellCheckLangNative", func(lang string) string {
-		return setSpellCheckLang(lang)
+		request, err := newSpellCheckLanguageRequest(lang)
+		if err != nil {
+			return getSpellCheckLang()
+		}
+		return setSpellCheckLang(request.Language)
 	})
 	_ = w.Bind("getBlurAvatarsNative", func() bool {
 		return getBlurAvatars()
 	})
 	_ = w.Bind("setBlurAvatarsNative", func(on bool) bool {
 		return setBlurAvatars(on)
+	})
+	_ = w.Bind("getPrivacyProfileStateNative", privacyProfileStateJSON)
+	_ = w.Bind("selectPrivacyProfileNative", selectPrivacyProfileJSON)
+	_ = w.Bind("copyPrivacyProfileToCustomNative", copyPrivacyProfileToCustomJSON)
+	_ = w.Bind("resetPrivacyProfilesNative", resetPrivacyProfilesJSON)
+	_ = w.Bind("setCustomPrivacyPolicyNative", updateCustomPrivacyPolicyJSON)
+	_ = w.Bind("getLockPolicyNative", lockPolicyJSON)
+	_ = w.Bind("requestAppLockNative", func() bool {
+		return requestNativeAppLock(uintptr(w.Window()))
+	})
+	_ = w.Bind("manageAppLockNative", func() bool {
+		return manageNativeAppLock(uintptr(w.Window()))
 	})
 	_ = w.Bind("getPendingCrashNative", func() string {
 		return pendingCrashReport()
@@ -941,7 +1173,11 @@ func runApp() {
 	})
 
 	w.Init(getInitScript(userAgentLinux))
+	if !showStartupNativeAppLock(uintptr(w.Window())) {
+		return
+	}
 	w.Navigate(appURL)
+	startNativeAppLockWatcher(w, uintptr(w.Window()))
 
 	// Check for updates in the background after startup & periodically
 	go guardGoroutine("update-ticker", func() {

@@ -44,7 +44,7 @@ func TestPDFDownloadDiscoveryDoesNotDependOnLegacyViewerTestID(t *testing.T) {
 	script := getInitScript("test-agent")
 	for _, want := range []string{
 		"function findVisibleViewerDownloadControl()",
-		"document.querySelectorAll(viewerDownloadSelector)",
+		"resolveCandidatesInDOMOrder('mediaViewerDownloadControl', document)",
 		"rect.top < window.innerHeight * 0.3",
 		"pendingViewerDownloadClick",
 	} {
@@ -294,7 +294,7 @@ func TestSettingsShortcutActionsKeepConsistentSpacing(t *testing.T) {
 			t.Fatalf("settings shortcut %q not found", shortcut)
 		}
 		window := script[idx-500 : idx+500]
-		if !strings.Contains(window, "gap:12px;min-width:150px;flex-shrink:0") {
+		if !strings.Contains(window, "gap:12px;min-width:150px;flex-shrink:0") && !strings.Contains(window, "gap:8px;flex-shrink:0") {
 			t.Errorf("shortcut %q is missing the spaced action layout", shortcut)
 		}
 		if !strings.Contains(window, "min-width:78px") {
@@ -330,77 +330,66 @@ func TestSettingsAlwaysHasAnAccessibleEntryPoint(t *testing.T) {
 	}
 }
 
-func TestPrivacyModeUsesVisualBlurWithChatListHoverUnblur(t *testing.T) {
+func TestPrivacyPolicyUsesIndependentAdapterSurfacesAndAccessibleReveal(t *testing.T) {
 	script := getInitScript("test-agent")
 	for _, want := range []string{
 		"filter: blur(6px) !important",
-		"filter: none !important",
-		"[data-testid=\"msg-container\"]:hover",
-		"data-wa-privacy-hover",
+		"data-wa-privacy-surface",
 		"data-wa-privacy-reveal",
-		"function privacyChatRowFromTarget(target)",
-		"function markPrivacyHoverRow(row)",
-		"function updatePrivacyHoverFromTarget(target)",
-		"setProperty('filter', 'none', 'important')",
-		"div._ak8l",
+		"privacyChatNames",
+		"privacyChatPreviews",
+		"privacyTimestamps",
+		"privacyUnreadCounts",
+		"privacyMessageText",
+		"privacyQuotedContent",
+		"privacyVoiceNoteDetails",
+		"privacyViewerMedia",
+		"window.setCustomPrivacySurface",
+		"window.setCustomPrivacyReveal",
+		"document.addEventListener('focusin'",
+		"data-wa-privacy-reveal-all",
+		"function privacyCandidates(key, root)",
+		"function tagPrivacySurfaces(subtree)",
+		"pendingPrivacyNodes",
+		"document.getElementById('app') || document.body",
 	} {
 		if !strings.Contains(script, want) {
-			t.Errorf("privacy blur styling is missing %q", want)
+			t.Errorf("granular privacy behavior is missing %q", want)
 		}
 	}
 	if strings.Contains(script, "background: rgba(134,150,160") {
 		t.Fatal("privacy mode must use visual blur, not gray solid redaction boxes")
 	}
-	if strings.Contains(script, "#pane-side span:hover") {
-		t.Fatal("chat-list privacy reveal must remain scoped to the hovered chat container")
-	}
-	if strings.Contains(script, "#pane-side [role=\"row\"]:hover span") {
-		t.Fatal("chat-list privacy reveal must not depend on broad row hover selectors")
-	}
-	if !strings.Contains(script, "#pane-side [role=\"row\"] span,") {
-		t.Fatal("chat-list timestamps must be included in the privacy blur layer")
-	}
-	if !strings.Contains(script, "row.querySelectorAll('span, ._ak8q") {
-		t.Fatal("hover reveal must include timestamp spans")
-	}
 }
 
 func TestPrivacyModeCopyMatchesTimestampBlurBehavior(t *testing.T) {
 	script := getInitScript("test-agent")
-	if !strings.Contains(script, "Hide names, previews, timestamps & message text") {
-		t.Fatal("privacy mode copy must explain that timestamps are hidden")
+	if !strings.Contains(script, "Choose which WhatsApp surfaces are blurred") {
+		t.Fatal("privacy settings must explain that surfaces are configured independently")
 	}
-	if strings.Contains(script, "timestamps stay visible") {
-		t.Fatal("privacy mode copy must not claim timestamps stay visible")
+	if !strings.Contains(script, "Visual blur does not lock the account or session") {
+		t.Fatal("privacy settings must distinguish visual blur from app lock")
 	}
 }
 
-func TestPrivacyModeCoversArchivedChatsAndAllAvatarVariants(t *testing.T) {
+func TestPrivacyProfilesIncludeIndependentSurfacesAndRemoveVisualAutoUnlock(t *testing.T) {
 	script := getInitScript("test-agent")
 	checks := []string{
-		// Sidebar & Archived chats text protection
-		"#side [role=\"row\"] span",
-		"#side [role=\"listitem\"] span",
-		"div[aria-label*=\"Archived\" i]",
-		// Avatar blur covers images, svg images, avatar container _ak8h, and default user SVGs
-		".privacy-mode.blur-avatars #side img",
-		".privacy-mode.blur-avatars #side image",
-		".privacy-mode.blur-avatars #side ._ak8h",
-		".privacy-mode.blur-avatars #side [data-testid=\"default-user\"]",
-		".privacy-mode.blur-avatars #side svg[viewBox=\"0 0 49 49\"]",
-		".privacy-mode.blur-avatars #side div.x78zum5 > div.x6s0dn4 > div",
-		".privacy-mode.blur-avatars #main header ._ak8h",
-		// Symmetrical hover unblur for row peek and direct avatar hover
-		"#side [role=\"row\"]:hover ._ak8h",
-		"#side [role=\"row\"]:hover image",
-		"#side ._ak8h:hover",
-		"#side ._ak8h:hover *",
-		// Sparing timestamps in #side (including archived view)
-		"tagTimesIn(document.getElementById('side') || document.getElementById('pane-side'))",
+		`option value="normal"`, `option value="office"`, `option value="presentation"`,
+		`option value="maximum-privacy"`, `option value="custom"`,
+		"window.selectPrivacyProfileNative", "window.copyPrivacyProfileToCustomNative",
+		"window.resetPrivacyProfilesNative", "chat_names: ['privacyChatNames'",
+		"group_names: ['privacyChatNames'", "media_viewer: ['privacyViewerMedia'",
+		"window.requestNativeAppLock", "window.manageAppLockNative",
 	}
 	for _, want := range checks {
 		if !strings.Contains(script, want) {
 			t.Errorf("privacy rules missing required coverage for %q", want)
+		}
+	}
+	for _, insecure := range []string{"wa-priv-autolock", "unlockFromIdle", "setAutoLockEnabled", "window.verifyLockCredential"} {
+		if strings.Contains(script, insecure) {
+			t.Errorf("legacy visual auto-unlock or page credential API remains: %q", insecure)
 		}
 	}
 }
@@ -669,7 +658,8 @@ func TestClosingNativePDFReturnsToChat(t *testing.T) {
 		t.Fatal("native preview close handler boundaries not found")
 	}
 	handler := script[start : start+end]
-	if !strings.Contains(handler, "document.querySelector('[data-testid=\"media-viewer\"]')") {
+	if !strings.Contains(handler, "window.waDOM.resolveFirst('mediaViewer', document)") ||
+		!strings.Contains(handler, "window.waDOM.resolveCandidates('mediaViewerCloseControl', viewer)") {
 		t.Fatal("native preview close handler must scope dismissal to WhatsApp's media viewer")
 	}
 	if strings.Contains(handler, "document.dispatchEvent(esc)") || strings.Contains(handler, "window.dispatchEvent(esc)") {
@@ -887,9 +877,11 @@ func TestMediaViewerCloseButtonNotIntercepted(t *testing.T) {
 	script := getInitScript("test-agent")
 
 	checks := []string{
-		`el.closest('[data-testid="media-viewer"]')`,
+		`window.waDOM.closest(target, 'mediaViewer')`,
+		`window.waDOM.closest(target, 'mediaViewerCloseControl', viewer)`,
 		`el.closest('#wa-doc-modal-overlay')`,
-		`target.closest('[data-testid="media-viewer"]')`,
+		`mediaViewer: [`,
+		`mediaViewerCloseControl: [`,
 		`button[data-testid="x-viewer"]`,
 		`[data-icon="x-viewer"]`,
 		`Escape`,

@@ -690,12 +690,19 @@ func runApp() {
 	}
 
 	_ = w.Bind("saveWindowStateNative", func(width, height int) {
+		if _, err := newWindowSizeRequest(width, height); err != nil {
+			return
+		}
 		saveWindowState(userDataDir, hwnd)
 	})
 
 	// Bind native notification bridge
 	_ = w.Bind("sendNativeNotification", func(title, body string) {
-		go showNativeNotification(title, body, iconFullPath, executablePath)
+		request, err := newNativeNotificationRequest(title, body)
+		if err != nil {
+			return
+		}
+		go showNativeNotification(request.Title, request.Body, iconFullPath, executablePath)
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
@@ -725,11 +732,11 @@ func runApp() {
 
 	// Bind external link handler to open links in default Windows browser
 	_ = w.Bind("openExternalLink", func(rawURL string) {
-		if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
-			go func() {
-				_ = exec.Command("rundll32", "url.dll,FileProtocolHandler", rawURL).Start()
-			}()
+		request, err := newExternalLinkRequest(rawURL)
+		if err != nil {
+			return
 		}
+		go func() { _ = exec.Command("rundll32", "url.dll,FileProtocolHandler", request.URL).Start() }()
 	})
 
 	// Bind Always on Top toggle
@@ -762,7 +769,7 @@ func runApp() {
 
 	// Bind download, preview, and settings handlers
 	_ = w.Bind("saveDownloadedFileNative", func(filename, dataURI string) string {
-		path, err := saveDownloadedFile(filename, dataURI)
+		path, err := saveDownloadedFileFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -770,7 +777,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("previewDocumentNative", func(filename, dataURI string) string {
-		path, err := previewDocument(filename, dataURI)
+		path, err := previewDocumentFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -778,7 +785,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("openFileNative", func(filePath string) bool {
-		return openFileInDefaultApp(filePath)
+		return openFileFromBridge(filePath)
 	})
 
 	// Lazy-load SheetJS library for spreadsheet preview
@@ -833,7 +840,11 @@ func runApp() {
 	})
 
 	_ = w.Bind("setAppThemeNative", func(theme string) string {
-		saved := saveTheme(theme)
+		request, err := newThemeChangeRequest(theme)
+		if err != nil {
+			return loadSettings().Theme
+		}
+		saved := saveTheme(request.Theme)
 		applyNativeThemeWin(hwnd, saved)
 		return saved
 	})
@@ -849,13 +860,29 @@ func runApp() {
 		return getSpellCheckLang()
 	})
 	_ = w.Bind("setSpellCheckLangNative", func(lang string) string {
-		return setSpellCheckLang(lang)
+		request, err := newSpellCheckLanguageRequest(lang)
+		if err != nil {
+			return getSpellCheckLang()
+		}
+		return setSpellCheckLang(request.Language)
 	})
 	_ = w.Bind("getBlurAvatarsNative", func() bool {
 		return getBlurAvatars()
 	})
 	_ = w.Bind("setBlurAvatarsNative", func(on bool) bool {
 		return setBlurAvatars(on)
+	})
+	_ = w.Bind("getPrivacyProfileStateNative", privacyProfileStateJSON)
+	_ = w.Bind("selectPrivacyProfileNative", selectPrivacyProfileJSON)
+	_ = w.Bind("copyPrivacyProfileToCustomNative", copyPrivacyProfileToCustomJSON)
+	_ = w.Bind("resetPrivacyProfilesNative", resetPrivacyProfilesJSON)
+	_ = w.Bind("setCustomPrivacyPolicyNative", updateCustomPrivacyPolicyJSON)
+	_ = w.Bind("getLockPolicyNative", lockPolicyJSON)
+	_ = w.Bind("requestAppLockNative", func() bool {
+		return requestNativeAppLock(hwnd)
+	})
+	_ = w.Bind("manageAppLockNative", func() bool {
+		return manageNativeAppLock(hwnd)
 	})
 	_ = w.Bind("getPendingCrashNative", func() string {
 		return pendingCrashReport()
@@ -866,15 +893,23 @@ func runApp() {
 
 	// Taskbar badge binding
 	_ = w.Bind("updateDockBadge", func(badge string) {
+		request, err := newUnreadBadgeRequest(badge)
+		if err != nil {
+			return
+		}
 		count := 0
-		if badge != "" {
-			fmt.Sscanf(badge, "%d", &count)
+		if request.Value != "" {
+			fmt.Sscanf(request.Value, "%d", &count)
 		}
 		_ = setTaskbarBadge(hwnd, count)
 	})
 
 	w.Init(getInitScript(userAgent))
+	if !showStartupNativeAppLock(hwnd) {
+		return
+	}
 	w.Navigate(appURL)
+	startNativeAppLockWatcher(w, hwnd)
 
 	// Check for updates in the background after startup & periodically
 	go guardGoroutine("update-ticker", func() {

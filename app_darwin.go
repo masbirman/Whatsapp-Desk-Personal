@@ -1218,12 +1218,19 @@ func runApp() {
 	// 5. Save window state only after a debounced resize event from the page.
 	// The callback runs on the WebView UI thread, as required by AppKit.
 	_ = w.Bind("saveWindowStateNative", func(width, height int) {
+		if _, err := newWindowSizeRequest(width, height); err != nil {
+			return
+		}
 		saveWindowState(userDataDir, w.Window())
 	})
 
 	// 6. Bind native notification bridge
 	_ = w.Bind("sendNativeNotification", func(title, body string) {
-		go showNativeNotification(title, body)
+		request, err := newNativeNotificationRequest(title, body)
+		if err != nil {
+			return
+		}
+		go showNativeNotification(request.Title, request.Body)
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
@@ -1238,14 +1245,20 @@ func runApp() {
 
 	// 7. Bind external link handler to open links in macOS default browser
 	_ = w.Bind("openExternalLink", func(rawURL string) {
-		if strings.HasPrefix(rawURL, "http://") || strings.HasPrefix(rawURL, "https://") {
-			_ = exec.Command("open", rawURL).Start()
+		request, err := newExternalLinkRequest(rawURL)
+		if err != nil {
+			return
 		}
+		_ = exec.Command("open", request.URL).Start()
 	})
 
 	// 8. Bind dock badge unread counter
 	_ = w.Bind("updateDockBadge", func(badge string) {
-		cstr := C.CString(badge)
+		request, err := newUnreadBadgeRequest(badge)
+		if err != nil {
+			return
+		}
+		cstr := C.CString(request.Value)
 		defer C.free(unsafe.Pointer(cstr))
 		C.setDockBadge(cstr)
 	})
@@ -1292,7 +1305,7 @@ func runApp() {
 
 	// 13. Bind download, preview, and settings handlers
 	_ = w.Bind("saveDownloadedFileNative", func(filename, dataURI string) string {
-		path, err := saveDownloadedFile(filename, dataURI)
+		path, err := saveDownloadedFileFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -1300,7 +1313,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("previewDocumentNative", func(filename, dataURI string) string {
-		path, err := previewDocument(filename, dataURI)
+		path, err := previewDocumentFromBridge(filename, dataURI)
 		if err != nil {
 			return ""
 		}
@@ -1308,7 +1321,7 @@ func runApp() {
 	})
 
 	_ = w.Bind("openFileNative", func(filePath string) bool {
-		return openFileInDefaultApp(filePath)
+		return openFileFromBridge(filePath)
 	})
 
 	_ = w.Bind("showPDFPreviewNative", func(filePath string) bool {
@@ -1369,7 +1382,11 @@ func runApp() {
 	})
 
 	_ = w.Bind("setAppThemeNative", func(theme string) string {
-		saved := saveTheme(theme)
+		request, err := newThemeChangeRequest(theme)
+		if err != nil {
+			return loadSettings().Theme
+		}
+		saved := saveTheme(request.Theme)
 		cstr := C.CString(saved)
 		defer C.free(unsafe.Pointer(cstr))
 		C.setNativeWindowTheme(w.Window(), cstr)
@@ -1387,7 +1404,11 @@ func runApp() {
 		return getSpellCheckLang()
 	})
 	_ = w.Bind("setSpellCheckLangNative", func(lang string) string {
-		return setSpellCheckLang(lang)
+		request, err := newSpellCheckLanguageRequest(lang)
+		if err != nil {
+			return getSpellCheckLang()
+		}
+		return setSpellCheckLang(request.Language)
 	})
 	_ = w.Bind("getBlurAvatarsNative", func() bool {
 		return getBlurAvatars()

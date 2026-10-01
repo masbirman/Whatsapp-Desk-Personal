@@ -85,6 +85,8 @@ func getInitScript(ua string) string {
 			}
 		}
 
+		// __WA_DOM_ADAPTER__
+
 		// Go-side platform constant — more reliable than navigator.platform which is
 		// deprecated in Chrome 93+ and may return "" in newer WebView2 builds.
 		var __WA_GOOS = '` + runtime.GOOS + `';
@@ -450,36 +452,22 @@ func getInitScript(ua string) string {
 					clearInterval(dismissTimer);
 					return;
 				}
-				var viewer = document.querySelector('[data-testid="media-viewer"], [data-animate-media-viewer="true"]');
+				var viewer = window.waDOM.resolveFirstInDOMOrder('mediaViewer', document).node;
 				if (!viewer) {
 					return;
 				}
-				var closeSelectors = [
-					'button[data-testid="x-viewer"]',
-					'[data-testid="x-viewer"]',
-					'[data-icon="x-viewer"]',
-					'[data-icon="x"]',
-					'[data-icon="back"]',
-					'button[aria-label*="Close" i]',
-					'button[aria-label*="Tutup" i]',
-					'[role="button"][aria-label*="Close" i]',
-					'[role="button"][aria-label*="Tutup" i]',
-					'button[title*="Close" i]',
-					'button[title*="Tutup" i]',
-					'[data-testid="btn-close"]',
-					'[data-testid="media-viewer-close"]'
-				];
+				var closeCandidates = window.waDOM.resolveCandidates('mediaViewerCloseControl', viewer, document);
 				var closed = false;
-				for (var i = 0; i < closeSelectors.length; i++) {
-					try {
-						var el = viewer.querySelector(closeSelectors[i]) || document.querySelector(closeSelectors[i]);
-						if (el) {
-							var btn = (el.closest && el.closest('button, [role="button"]')) || el;
+				for (var i = 0; i < closeCandidates.length; i++) {
+					var el = closeCandidates[i].node;
+					if (el) {
+						var btn = (el.closest && el.closest('button, [role="button"]')) || el;
+						try {
 							btn.click();
 							closed = true;
 							break;
-						}
-					} catch (e) {}
+						} catch (e) {}
+					}
 				}
 				// Dispatch synthetic Escape tagged so our preview modal ignores it
 				var escEvt = new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true, cancelable: true });
@@ -504,7 +492,7 @@ func getInitScript(ua string) string {
 		function extractDocumentName(el) {
 			if (!el || typeof el.closest !== 'function') return '';
 			// NEVER extract document names from inside the media viewer, modal dialogs, or top toolbars
-			if (el.closest('[data-testid="media-viewer"]') ||
+			if (window.waDOM.closest(el, 'mediaViewer').status === 'found' ||
 			    el.closest('#wa-doc-modal-overlay') ||
 			    el.closest('[role="toolbar"]') ||
 			    el.closest('header')) {
@@ -512,7 +500,7 @@ func getInitScript(ua string) string {
 			}
 
 			// Only search within a chat message container / row / bubble
-			var msgContainer = el.closest('[data-testid*="msg-container"], [role="row"], div[data-id], .message-in, .message-out');
+			var msgContainer = window.waDOM.closest(el, 'messageContainer').node;
 			if (!msgContainer) return '';
 
 			var node = el;
@@ -550,19 +538,12 @@ func getInitScript(ua string) string {
 			// The native PDF window is already closed at this point. Only dismiss
 			// WhatsApp's own media viewer if it is still present; never send a
 			// global Escape because WhatsApp may interpret it as closing the chat.
-			var viewer = document.querySelector('[data-testid="media-viewer"]');
-			var selectors = [
-				'button[data-testid="x-viewer"]', '[data-testid="x-viewer"]',
-				'[data-icon="x-viewer"]', '[data-icon="x"]', '[data-icon="back"]',
-				'button[aria-label*="Close" i]', 'button[aria-label*="Tutup" i]',
-				'[role="button"][aria-label*="Close" i]', '[role="button"][aria-label*="Tutup" i]',
-				'button[title*="Close" i]', 'button[title*="Tutup" i]'
-			].join(',');
-			var candidates = viewer ? viewer.querySelectorAll(selectors) : [];
-			var best = null;
-			var bestScore = -1;
-			for (var i = 0; i < candidates.length; i++) {
-				var raw = candidates[i];
+				var viewer = window.waDOM.resolveFirst('mediaViewer', document).node;
+				var candidates = viewer ? window.waDOM.resolveCandidates('mediaViewerCloseControl', viewer) : [];
+				var best = null;
+				var bestScore = -1;
+				for (var i = 0; i < candidates.length; i++) {
+					var raw = candidates[i].node;
 				if (raw.closest && raw.closest('#wa-doc-modal-overlay')) continue;
 				var control = (raw.closest && raw.closest('button, [role="button"]')) || raw;
 				var rect = control.getBoundingClientRect();
@@ -589,27 +570,16 @@ func getInitScript(ua string) string {
 		document.addEventListener('click', function(e) {
 			var target = e.target;
 			if (!target || typeof target.closest !== 'function') return;
-			var viewer = target.closest('[data-testid="media-viewer"]');
+			var viewer = window.waDOM.closest(target, 'mediaViewer').node;
 			if (!viewer) return;
 
-			var isCloseBtn = target.closest([
-				'button[data-testid="x-viewer"]',
-				'[data-testid="x-viewer"]',
-				'[data-icon="x-viewer"]',
-				'[data-icon="x"]',
-				'[data-icon="back"]',
-				'button[aria-label*="Close" i]',
-				'button[aria-label*="Tutup" i]',
-				'button[title*="Close" i]',
-				'button[title*="Tutup" i]',
-				'[data-testid="btn-close"]'
-			].join(','));
+			var isCloseBtn = window.waDOM.closest(target, 'mediaViewerCloseControl', viewer).status === 'found';
 
 			if (isCloseBtn) {
 				lastDocumentIntentAt = 0;
 				lastClickedDocName = '';
 				setTimeout(function() {
-					var activeViewer = document.querySelector('[data-testid="media-viewer"]');
+					var activeViewer = window.waDOM.resolveFirst('mediaViewer', document).node;
 					if (activeViewer) {
 						var escEvt = new KeyboardEvent('keydown', {
 							key: 'Escape',
@@ -661,7 +631,7 @@ func getInitScript(ua string) string {
 			var dropInProgress = false;
 
 			function getDropZone() {
-				return document.querySelector('#main') || document.querySelector('[data-testid="conversation-panel"]') || document.querySelector('[data-testid="chat-list"]') || document.body;
+				return window.waDOM.resolveFirst('conversationRoot', document).node || window.waDOM.resolveFirst('chatDropFallback', document).node || document.body;
 			}
 
 			function isFileDrag(e) {
@@ -728,19 +698,8 @@ func getInitScript(ua string) string {
 			}
 
 			function findAttachButton() {
-				return document.querySelector(
-					'[data-testid="attach-menu-plus"], ' +
-					'[data-testid="conversation-clip"], ' +
-					'[data-testid="clip"], [data-icon="clip"], ' +
-					'[data-testid="plus"], [data-icon="plus"], ' +
-					'#main footer [role="button"][aria-label*="Attach" i], ' +
-					'#main footer [role="button"][aria-label*="Lampirkan" i], ' +
-					'#main footer button[aria-label*="Attach" i], ' +
-					'#main footer button[aria-label*="Lampirkan" i], ' +
-					'button[aria-label*="Attach" i], button[aria-label*="Lampirkan" i], ' +
-					'[role="button"][aria-label*="Attach" i], [role="button"][aria-label*="Lampirkan" i], ' +
-					'button[title*="Attach" i], button[title*="Lampirkan" i]'
-				);
+				var selectors = window.waDOM.selectors('attachButton');
+				try { return document.querySelector(selectors.join(', ')); } catch (e) { return null; }
 			}
 
 			function findInputInOrNear(el) {
@@ -760,35 +719,19 @@ func getInitScript(ua string) string {
 			}
 
 			function findMediaInput() {
-				var selectors = [
-					'li[data-testid*="attach-media"]',
-					'li[data-testid*="attach-image"]',
-					'li[data-testid*="image"]',
-					'[data-testid*="attach-media"]',
-					'[data-testid*="attach-image"]',
-					'[data-testid="mi-attach-media"]',
-					'[data-testid="attach-image"]',
-					'[data-icon="attach-image"]',
-					'[data-icon="image"]',
-					'[aria-label*="Photos & videos" i]',
-					'[aria-label*="Foto & video" i]',
-					'[aria-label*="Fotos y videos" i]',
-					'[aria-label*="Fotos e vídeos" i]',
-					'[title*="Photos & videos" i]',
-					'[title*="Foto & video" i]'
-				];
-				for (var s = 0; s < selectors.length; s++) {
-					var el = document.querySelector(selectors[s]);
+				var candidates = window.waDOM.resolveCandidates('attachMediaItem', document);
+				for (var s = 0; s < candidates.length; s++) {
+					var el = candidates[s].node;
 					if (el) {
 						var inp = findInputInOrNear(el);
 						if (inp) return inp;
 					}
 				}
 
-				var allInputs = document.querySelectorAll('input[type="file"]');
+				var allInputs = window.waDOM.resolveAll('fileInput', document).nodes;
 				for (var i = 0; i < allInputs.length; i++) {
 					var input = allInputs[i];
-					if (input.closest && input.closest('[data-testid*="sticker"], [aria-label*="sticker" i], [aria-label*="stiker" i]')) {
+					if (window.waDOM.closest(input, 'stickerInputContainer').status === 'found') {
 						continue;
 					}
 					var accept = (input.getAttribute('accept') || '').toLowerCase();
@@ -806,12 +749,12 @@ func getInitScript(ua string) string {
 			// WhatsApp pre-renders hidden file inputs even before the attach menu is opened.
 			// The document input typically has accept="*" or no accept attribute.
 			function findDocumentInput() {
-				var allInputs = document.querySelectorAll('input[type="file"]');
+				var allInputs = window.waDOM.resolveAll('fileInput', document).nodes;
 				for (var i = 0; i < allInputs.length; i++) {
 					var input = allInputs[i];
 
 					// Skip sticker inputs
-					if (input.closest && input.closest('[data-testid*="sticker"], [aria-label*="sticker" i], [aria-label*="stiker" i]')) {
+					if (window.waDOM.closest(input, 'stickerInputContainer').status === 'found') {
 						continue;
 					}
 
@@ -1557,7 +1500,7 @@ func getInitScript(ua string) string {
 					}
 				}
 			}
-			var titleEl = document.querySelector('title');
+			var titleEl = window.waDOM.resolveFirst('pageTitle', document).node;
 			if (titleEl && titleEl.nodeType) {
 				try {
 					new MutationObserver(syncBadge).observe(titleEl, { childList: true, characterData: true, subtree: true });
@@ -1737,437 +1680,270 @@ func getInitScript(ua string) string {
 			}, 10000);
 		});
 
-		// Privacy Mode Toggle (Cmd + Shift + P)
+		// Granular privacy profiles. WhatsApp selectors live in dom_adapter.js;
+		// this module only tags resolved surfaces and applies native policy.
 		waRunModule('privacy-mode', function() {
-			var isPrivacyActive = false;
+			var policy = {};
+			var currentProfile = 'normal';
+			var allProfiles = [];
+			var manualPrivacy = false;
 			var styleEl = document.createElement('style');
 			styleEl.id = 'whatsapp-privacy-style';
-			// PRIVACY STRATEGY: text and previews use authentic visual blur
-			// (filter: blur(6px)), not opaque gray redaction blocks.
-			// Chat-list timestamps are private too and reveal with their row.
-			// Full set of chat list container selectors ensures instant auto-unblur
-			// on hover across all modern WhatsApp Web DOM structures.
-			styleEl.textContent = [
-				// Layer 1: names + previews in the chat list, hover row/item to peek.
-				// Chat-list timestamps are included in this blur layer.
-				// Covers #side generally (including Archived chats drawer & filtered views)
-				// as well as #pane-side and modern aria/data-testid containers.
-				'.privacy-mode #side [role="row"] span,',
-				'.privacy-mode #side [role="listitem"] span,',
-				'.privacy-mode #side [data-testid="cell-frame-container"] span,',
-				'.privacy-mode #side div[tabindex="-1"] span,',
-				'.privacy-mode #side div._ak8l span,',
-				'.privacy-mode #side ._ak8q,',
-				'.privacy-mode #side ._ak8k,',
-				'.privacy-mode #pane-side [role="row"] span,',
-				'.privacy-mode #pane-side [role="listitem"] span,',
-				'.privacy-mode #pane-side [data-testid="cell-frame-container"] span,',
-				'.privacy-mode #pane-side div[tabindex="-1"] span,',
-				'.privacy-mode #pane-side ._ak8q,',
-				'.privacy-mode #pane-side ._ak8k,',
-				'.privacy-mode [data-testid="chat-list"] [role="row"] span,',
-				'.privacy-mode [data-testid="chat-list"] [role="listitem"] span,',
-				'.privacy-mode [data-testid="chat-list"] [data-testid="cell-frame-container"] span,',
-				'.privacy-mode [data-testid="chat-list"] div[tabindex="-1"] span,',
-				'.privacy-mode div[aria-label="Chat list"] span,',
-				'.privacy-mode div[aria-label*="Archived" i] span',
-				'{ filter: blur(6px) !important; transition: filter 0.15s ease-out !important; }',
-				// Hovering any row or container restores its contents instantly.
-				'.privacy-mode [data-wa-privacy-hover="1"] span,',
-				'.privacy-mode [data-wa-privacy-hover="1"] ._ak8q,',
-				'.privacy-mode [data-wa-privacy-hover="1"] ._ak8k,',
-				'.privacy-mode [data-wa-privacy-reveal="1"]',
-				'{ filter: none !important; }',
-				// Layer 2: everything textual inside a message bubble.
-				// Hovering the bubble restores the whole subtree.
-				'.privacy-mode #main [data-testid="msg-container"] span:not([data-wa-time]),',
-				'.privacy-mode #main .message-in span:not([data-wa-time]),',
-				'.privacy-mode #main .message-out span:not([data-wa-time])',
-				'{ filter: blur(6px) !important; transition: filter 0.15s ease-out !important; }',
-				'.privacy-mode #main [data-testid="msg-container"]:hover span,',
-				'.privacy-mode #main .message-in:hover span,',
-				'.privacy-mode #main .message-out:hover span,',
-				'.privacy-mode #main [data-testid="msg-container"] span:hover,',
-				'.privacy-mode #main .message-in span:hover,',
-				'.privacy-mode #main .message-out span:hover',
-				'{ filter: none !important; }',
-				// In-chat photos/videos hide with blur; hover restores symmetrically.
-				'.privacy-mode #main [data-testid="msg-container"] img:not([data-emoji]),',
-				'.privacy-mode #main [data-testid="msg-container"] video,',
-				'.privacy-mode #main .message-in img:not([data-emoji]),',
-				'.privacy-mode #main .message-in video,',
-				'.privacy-mode #main .message-out img:not([data-emoji]),',
-				'.privacy-mode #main .message-out video',
-				'{ filter: blur(12px) !important; transition: filter 0.15s ease-out !important; }',
-				'.privacy-mode #main [data-testid="msg-container"]:hover img,',
-				'.privacy-mode #main [data-testid="msg-container"]:hover video,',
-				'.privacy-mode #main .message-in:hover img,',
-				'.privacy-mode #main .message-in:hover video,',
-				'.privacy-mode #main .message-out:hover img,',
-				'.privacy-mode #main .message-out:hover video,',
-				'.privacy-mode #main [data-testid="msg-container"] img:hover,',
-				'.privacy-mode #main [data-testid="msg-container"] video:hover',
-				'{ filter: none !important; }',
-				// Layer 3: conversation header name/status, hover to reveal.
-				'.privacy-mode #main header span:not([data-wa-time])',
-				'{ filter: blur(6px) !important; transition: filter 0.15s ease-out !important; }',
-				'.privacy-mode #main header:hover span,',
-				'.privacy-mode #main header span:hover',
-				'{ filter: none !important; }',
-				// Layer 4: optional avatar blur (.blur-avatars on <html>).
-				// Supports standard contacts, pinned chats, disappearing messages,
-				// contacts posting a status (with status rings), archived chats,
-				// and contacts with or without custom profile pictures (SVG/default user).
-				'.privacy-mode.blur-avatars #side img,',
-				'.privacy-mode.blur-avatars #side image,',
-				'.privacy-mode.blur-avatars #side ._ak8h,',
-				'.privacy-mode.blur-avatars #side [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars #side [data-icon="default-user"],',
-				'.privacy-mode.blur-avatars #side [data-icon="default-group"],',
-				'.privacy-mode.blur-avatars #side [data-icon="community-outline"],',
-				'.privacy-mode.blur-avatars #side svg[viewBox="0 0 49 49"],',
-				'.privacy-mode.blur-avatars #side [role="row"] [role="button"] > div:first-child,',
-				'.privacy-mode.blur-avatars #side [role="listitem"] [role="button"] > div:first-child,',
-				'.privacy-mode.blur-avatars #side div.x78zum5 > div.x6s0dn4 > div,',
-				'.privacy-mode.blur-avatars #pane-side img,',
-				'.privacy-mode.blur-avatars #pane-side image,',
-				'.privacy-mode.blur-avatars #pane-side ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] img,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] image,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] ._ak8h,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] img,',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] image,',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] ._ak8h,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] img,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] image,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] ._ak8h,',
-				'.privacy-mode.blur-avatars #main header img,',
-				'.privacy-mode.blur-avatars #main header image,',
-				'.privacy-mode.blur-avatars #main header ._ak8h,',
-				'.privacy-mode.blur-avatars #main header [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars #main header [data-icon="default-user"],',
-				'.privacy-mode.blur-avatars #main header svg[viewBox="0 0 49 49"],',
-				'.privacy-mode.blur-avatars #main header div[role="button"]:first-child div.x1n2onr6.x16ye13r.x5lhr3w,',
-				'.privacy-mode.blur-avatars #main .message-in img:not([data-emoji]),',
-				'.privacy-mode.blur-avatars #main .message-in image,',
-				'.privacy-mode.blur-avatars #main .message-in ._ak8h,',
-				'.privacy-mode.blur-avatars #main .message-out img:not([data-emoji]),',
-				'.privacy-mode.blur-avatars #main .message-out image,',
-				'.privacy-mode.blur-avatars #main .message-out ._ak8h,',
-				'.privacy-mode.blur-avatars #main [data-testid="msg-container"] ._ak8h,',
-				'.privacy-mode.blur-avatars div[role="dialog"] ._ak8h,',
-				'.privacy-mode.blur-avatars div[role="dialog"] img',
-				'{ filter: blur(12px) !important; transition: filter 0.15s ease-out !important; }',
-				// Symmetrical unblur on hovering row, item, or the avatar directly.
-				'.privacy-mode.blur-avatars #side [role="row"]:hover img,',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover image,',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover [data-icon="default-user"],',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover svg[viewBox="0 0 49 49"],',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover [role="button"] > div:first-child,',
-				'.privacy-mode.blur-avatars #side [role="row"]:hover div.x78zum5 > div.x6s0dn4 > div,',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover img,',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover image,',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover svg[viewBox="0 0 49 49"],',
-				'.privacy-mode.blur-avatars #side [role="listitem"]:hover [role="button"] > div:first-child,',
-				'.privacy-mode.blur-avatars #side [data-testid="cell-frame-container"]:hover img,',
-				'.privacy-mode.blur-avatars #side [data-testid="cell-frame-container"]:hover image,',
-				'.privacy-mode.blur-avatars #side [data-testid="cell-frame-container"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #side div[tabindex="-1"]:hover img,',
-				'.privacy-mode.blur-avatars #side div[tabindex="-1"]:hover image,',
-				'.privacy-mode.blur-avatars #side div[tabindex="-1"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #side div._ak8l:hover img,',
-				'.privacy-mode.blur-avatars #side div._ak8l:hover image,',
-				'.privacy-mode.blur-avatars #side div._ak8l:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #side img:hover,',
-				'.privacy-mode.blur-avatars #side image:hover,',
-				'.privacy-mode.blur-avatars #side ._ak8h:hover,',
-				'.privacy-mode.blur-avatars #side ._ak8h:hover *,',
-				'.privacy-mode.blur-avatars #side [data-testid="default-user"]:hover,',
-				'.privacy-mode.blur-avatars #side svg[viewBox="0 0 49 49"]:hover,',
-				'.privacy-mode.blur-avatars #pane-side [role="row"]:hover img,',
-				'.privacy-mode.blur-avatars #pane-side [role="row"]:hover image,',
-				'.privacy-mode.blur-avatars #pane-side [role="row"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side [role="listitem"]:hover img,',
-				'.privacy-mode.blur-avatars #pane-side [role="listitem"]:hover image,',
-				'.privacy-mode.blur-avatars #pane-side [role="listitem"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side [data-testid="cell-frame-container"]:hover img,',
-				'.privacy-mode.blur-avatars #pane-side [data-testid="cell-frame-container"]:hover image,',
-				'.privacy-mode.blur-avatars #pane-side [data-testid="cell-frame-container"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side div[tabindex="-1"]:hover img,',
-				'.privacy-mode.blur-avatars #pane-side div[tabindex="-1"]:hover image,',
-				'.privacy-mode.blur-avatars #pane-side div[tabindex="-1"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side div._ak8l:hover img,',
-				'.privacy-mode.blur-avatars #pane-side div._ak8l:hover image,',
-				'.privacy-mode.blur-avatars #pane-side div._ak8l:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #pane-side img:hover,',
-				'.privacy-mode.blur-avatars #pane-side image:hover,',
-				'.privacy-mode.blur-avatars #pane-side ._ak8h:hover,',
-				'.privacy-mode.blur-avatars #pane-side ._ak8h:hover *,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="row"]:hover img,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="row"]:hover image,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="row"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="listitem"]:hover img,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="listitem"]:hover image,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [role="listitem"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [data-testid="cell-frame-container"]:hover img,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [data-testid="cell-frame-container"]:hover image,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] [data-testid="cell-frame-container"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] div[tabindex="-1"]:hover img,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] div[tabindex="-1"]:hover image,',
-				'.privacy-mode.blur-avatars [data-testid="chat-list"] div[tabindex="-1"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] [role="row"]:hover img,',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] [role="row"]:hover image,',
-				'.privacy-mode.blur-avatars div[aria-label="Chat list"] [role="row"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="row"]:hover img,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="row"]:hover image,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="row"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="listitem"]:hover img,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="listitem"]:hover image,',
-				'.privacy-mode.blur-avatars div[aria-label*="Archived" i] [role="listitem"]:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #main header:hover img,',
-				'.privacy-mode.blur-avatars #main header:hover image,',
-				'.privacy-mode.blur-avatars #main header:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #main header:hover [data-testid="default-user"],',
-				'.privacy-mode.blur-avatars #main header:hover svg[viewBox="0 0 49 49"],',
-				'.privacy-mode.blur-avatars #main header img:hover,',
-				'.privacy-mode.blur-avatars #main header image:hover,',
-				'.privacy-mode.blur-avatars #main header ._ak8h:hover,',
-				'.privacy-mode.blur-avatars #main header ._ak8h:hover *,',
-				'.privacy-mode.blur-avatars #main header [data-testid="default-user"]:hover,',
-				'.privacy-mode.blur-avatars #main header svg[viewBox="0 0 49 49"]:hover,',
-				'.privacy-mode.blur-avatars #main .message-in:hover img,',
-				'.privacy-mode.blur-avatars #main .message-in:hover image,',
-				'.privacy-mode.blur-avatars #main .message-in:hover ._ak8h,',
-				'.privacy-mode.blur-avatars #main .message-out:hover img,',
-				'.privacy-mode.blur-avatars #main .message-out:hover image,',
-				'.privacy-mode.blur-avatars #main .message-out:hover ._ak8h,',
-				'.privacy-mode.blur-avatars div[role="dialog"] ._ak8h:hover,',
-				'.privacy-mode.blur-avatars div[role="dialog"] img:hover',
-				'{ filter: none !important; }',
-				// Layer 5: fullscreen media viewer
-				'.privacy-mode [data-testid="media-viewer"] img,',
-				'.privacy-mode [data-testid="media-viewer"] video',
-				'{ filter: blur(16px) !important; transition: filter 0.15s ease-out !important; }',
-				'.privacy-mode [data-testid="media-viewer"]:hover img,',
-				'.privacy-mode [data-testid="media-viewer"]:hover video',
-				'{ filter: none !important; }',
-				// Drag & drop visual feedback
-				'.wa-drag-over { outline: 3px solid #00a884; outline-offset: -3px; }',
-				'.wa-drag-over * { pointer-events: none; }'
-			].join('\n');
-
-			var activePrivacyHoverRow = null;
-			function privacyChatListRootFromTarget(target) {
-				var node = target && target.nodeType === 1 ? target : null;
-				while (node && node !== document.body) {
-					if (node.id === 'pane-side' || node.id === 'side' ||
-						node.getAttribute('data-testid') === 'chat-list' ||
-						node.getAttribute('aria-label') === 'Chat list') return node;
-					node = node.parentElement;
-				}
-				return null;
+			var surfaceMap = {
+				chat_names: ['privacyChatNames', 'chatListRoot'],
+				group_names: ['privacyChatNames', 'chatListRoot'],
+				avatars: ['privacyAvatars', 'chatListRoot'],
+				preview: ['privacyChatPreviews', 'chatListRoot'],
+				timestamps: ['privacyTimestamps', 'chatListRoot'],
+				unread_count: ['privacyUnreadCounts', 'chatListRoot'],
+				message_text: ['privacyMessageText', 'conversationRoot'],
+				images: ['privacyImages', 'conversationRoot'],
+				videos: ['privacyVideos', 'conversationRoot'],
+				stickers: ['privacyStickers', 'conversationRoot'],
+				quoted_content: ['privacyQuotedContent', 'conversationRoot'],
+				voice_note_details: ['privacyVoiceNoteDetails', 'conversationRoot'],
+				header_name: ['privacyHeaderNames', 'conversationHeader'],
+				header_avatar: ['privacyHeaderAvatars', 'conversationHeader'],
+			header_subtitle: ['privacyHeaderSubtitles', 'conversationHeader'],
+				media_viewer: ['privacyViewerMedia', 'mediaViewer']
+			};
+			var secondarySurfaceMap = {
+				avatars: ['privacyMessageAvatars', 'conversationRoot']
+			};
+			var fieldLabels = {
+				chat_names: 'Chat names', group_names: 'Group names', avatars: 'Avatars',
+				preview: 'Message previews', timestamps: 'Timestamps', unread_count: 'Unread counts',
+				message_text: 'Message text', images: 'Images', videos: 'Videos', stickers: 'Stickers',
+				quoted_content: 'Quoted or replied content', voice_note_details: 'Voice-note details',
+				header_name: 'Conversation name', header_avatar: 'Conversation avatar',
+				header_subtitle: 'Conversation subtitle', media_viewer: 'Media viewer'
+			};
+			function ensureStyle() {
+				if (!styleEl.parentNode) (document.head || document.documentElement).appendChild(styleEl);
+				var rules = [
+					'html[data-wa-privacy-manual="1"] [data-wa-privacy-surface] { filter: blur(6px) !important; }',
+					'html[data-wa-privacy-reveal-all="1"] [data-wa-privacy-surface] { filter: none !important; }',
+					'[data-wa-privacy-reveal="1"] [data-wa-privacy-surface], [data-wa-privacy-reveal="1"][data-wa-privacy-surface] { filter: none !important; }'
+				];
+				Object.keys(surfaceMap).forEach(function(key) {
+					var radius = key === 'avatars' || key === 'images' || key === 'videos' || key === 'stickers' || key === 'header_avatar' ? '12px' : (key === 'media_viewer' ? '16px' : '6px');
+					rules.push('html[data-wa-privacy-' + key + '="1"] [data-wa-privacy-surface~="' + key + '"] { filter: blur(' + radius + ') !important; transition: filter 0.12s ease-out !important; }');
+				});
+				styleEl.textContent = rules.join('\n');
 			}
-			function privacyChatRowFromTarget(target) {
-				var listRoot = privacyChatListRootFromTarget(target);
-				var node = target && target.nodeType === 1 ? target : null;
-				while (node && node !== listRoot && node !== document.body) {
-					if (node.matches && (node.matches('[role="row"]') ||
-						node.matches('[role="listitem"]') ||
-						node.matches('[data-testid="cell-frame-container"]') ||
-						node.matches('div[tabindex="-1"]') ||
-						node.matches('div._ak8l'))) return node;
-					node = node.parentElement;
+			function setSurface(node, key) {
+				if (!node || !node.setAttribute) return;
+				var current = (node.getAttribute('data-wa-privacy-surface') || '').split(/\s+/).filter(Boolean);
+				if (current.indexOf(key) < 0) {
+					current.push(key);
+					node.setAttribute('data-wa-privacy-surface', current.join(' '));
 				}
-				return null;
 			}
-			function clearPrivacyHoverRow() {
-				if (!activePrivacyHoverRow) return;
-				activePrivacyHoverRow.removeAttribute('data-wa-privacy-hover');
-				var revealed = activePrivacyHoverRow.querySelectorAll('[data-wa-privacy-reveal="1"]');
-				for (var i = 0; i < revealed.length; i++) {
-					revealed[i].removeAttribute('data-wa-privacy-reveal');
-					if (revealed[i].getAttribute('data-wa-privacy-filter-overridden') === '1') {
-						revealed[i].style.removeProperty('filter');
-						revealed[i].removeAttribute('data-wa-privacy-filter-overridden');
+			function privacyCandidates(key, root) {
+				var candidates = window.waDOM.resolveCandidates(key, root);
+				if (root && root.nodeType === 1 && typeof root.matches === 'function') {
+					var selectors = window.waDOM.selectors(key);
+					for (var i = 0; i < selectors.length; i++) {
+						try {
+							if (root.matches(selectors[i])) {
+								if (!candidates.some(function(candidate) { return candidate.node === root; })) {
+									candidates.unshift({ node: root, selector: selectors[i], priority: i });
+								}
+								break;
+							}
+						} catch (e) {}
 					}
 				}
-				activePrivacyHoverRow = null;
+				return candidates;
 			}
-			function markPrivacyHoverRow(row) {
-				if (activePrivacyHoverRow === row) return;
-				clearPrivacyHoverRow();
-				activePrivacyHoverRow = row;
-				row.setAttribute('data-wa-privacy-hover', '1');
-				var revealTargets = row.querySelectorAll('span, ._ak8q, ._ak8k, img, image, [data-testid="default-user"], [data-icon="default-user"], [data-icon="default-group"]');
-				for (var i = 0; i < revealTargets.length; i++) {
-					revealTargets[i].setAttribute('data-wa-privacy-reveal', '1');
-					revealTargets[i].style.setProperty('filter', 'none', 'important');
-					revealTargets[i].setAttribute('data-wa-privacy-filter-overridden', '1');
+			function scopeFor(key) {
+				var spec = surfaceMap[key];
+				return spec ? window.waDOM.resolveFirst(spec[1], document).node : null;
+			}
+			function tagPrivacySurfaces(subtree) {
+				if (!window.waDOM) return;
+				Object.keys(surfaceMap).forEach(function(key) {
+					var spec = surfaceMap[key];
+					var scope = subtree || scopeFor(key);
+					if (!scope) return;
+					var candidates = privacyCandidates(spec[0], scope);
+					for (var i = 0; i < candidates.length; i++) {
+						var node = candidates[i].node;
+						if (key === 'chat_names' || key === 'group_names') {
+							var row = window.waDOM.closest(node, 'chatRow', document.body).node;
+							var group = row && window.waDOM.resolveCandidates('privacyGroupIndicator', row).length > 0;
+							if (group === (key === 'group_names')) setSurface(node, key);
+						} else setSurface(node, key);
+					}
+				});
+				Object.keys(secondarySurfaceMap).forEach(function(key) {
+					var spec = secondarySurfaceMap[key];
+					var scope = subtree || window.waDOM.resolveFirst(spec[1], document).node;
+					if (!scope) return;
+					var candidates = privacyCandidates(spec[0], scope);
+					for (var i = 0; i < candidates.length; i++) setSurface(candidates[i].node, key);
+				});
+			}
+			function applyPolicy(nextPolicy) {
+				policy = nextPolicy || {};
+				var root = document.documentElement;
+				if (!root) return;
+				Object.keys(surfaceMap).forEach(function(key) {
+					root.setAttribute('data-wa-privacy-' + key, policy[key] ? '1' : '0');
+				});
+				root.setAttribute('data-wa-privacy-reveal-mode', policy.reveal_mode || 'hover');
+				ensureStyle();
+				tagPrivacySurfaces();
+			}
+			function parseState(raw) {
+				try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch (e) { return null; }
+			}
+			function applyState(state) {
+				if (!state || !state.profiles) return false;
+				allProfiles = state.profiles;
+				currentProfile = state.current_profile_id || 'normal';
+				var active = allProfiles.filter(function(profile) { return profile.id === currentProfile; })[0];
+				if (!active) return false;
+				applyPolicy(active.privacy || {});
+				window.dispatchEvent(new CustomEvent('wa-privacy-profile-changed', { detail: { id: currentProfile, name: active.name } }));
+				return true;
+			}
+			window.refreshPrivacyProfiles = function() {
+				if (!window.getPrivacyProfileStateNative) return Promise.resolve(false);
+				return Promise.resolve(window.getPrivacyProfileStateNative()).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.getPrivacyProfiles = function() { return allProfiles.slice(); };
+			window.getActivePrivacyProfile = function() { return currentProfile; };
+			window.selectPrivacyProfile = function(id) {
+				if (!window.selectPrivacyProfileNative) return Promise.resolve(false);
+				return Promise.resolve(window.selectPrivacyProfileNative(String(id || ''))).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.copyCurrentPrivacyProfileToCustom = function() {
+				if (!window.copyPrivacyProfileToCustomNative) return Promise.resolve(false);
+				return Promise.resolve(window.copyPrivacyProfileToCustomNative()).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.resetPrivacyProfiles = function() {
+				if (!window.resetPrivacyProfilesNative) return Promise.resolve(false);
+				return Promise.resolve(window.resetPrivacyProfilesNative()).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.setCustomPrivacySurface = function(key, enabled) {
+				if (currentProfile !== 'custom' || !Object.prototype.hasOwnProperty.call(surfaceMap, key) || !window.setCustomPrivacyPolicyNative) return Promise.resolve(false);
+				policy[key] = !!enabled;
+				applyPolicy(policy);
+				return Promise.resolve(window.setCustomPrivacyPolicyNative(JSON.stringify(policy))).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.setCustomPrivacyReveal = function(mode, modifier) {
+				if (currentProfile !== 'custom' || !window.setCustomPrivacyPolicyNative) return Promise.resolve(false);
+				policy.reveal_mode = mode === 'click' || mode === 'modifier' ? mode : 'hover';
+				policy.reveal_modifier = modifier === 'shift' || modifier === 'ctrl' ? modifier : 'alt';
+				applyPolicy(policy);
+				return Promise.resolve(window.setCustomPrivacyPolicyNative(JSON.stringify(policy))).then(function(raw) { return applyState(parseState(raw)); }).catch(function() { return false; });
+			};
+			window.getActivePrivacyPolicy = function() { return Object.assign({}, policy); };
+			window.isPrivacyModeActive = function() { return manualPrivacy; };
+			window.togglePrivacyMode = function() {
+				manualPrivacy = !manualPrivacy;
+				if (document.documentElement) document.documentElement.setAttribute('data-wa-privacy-manual', manualPrivacy ? '1' : '0');
+				showFloatingToast(manualPrivacy ? 'Privacy Mode: enabled' : 'Privacy Mode: disabled');
+				return manualPrivacy;
+			};
+			window.requestNativeAppLock = function() {
+				if (window.requestAppLockNative) return Promise.resolve(window.requestAppLockNative());
+				return Promise.resolve(false);
+			};
+			function revealContainer(target) {
+				if (!target) return target;
+				var found = window.waDOM.closest(target, 'chatRow', document.body).node ||
+					window.waDOM.closest(target, 'messageContainer', document.body).node ||
+					window.waDOM.closest(target, 'conversationHeader', document.body).node ||
+					window.waDOM.closest(target, 'mediaViewer', document.body).node;
+				return found || target;
+			}
+			var activeReveal = null;
+			function clearReveal() {
+				if (activeReveal) activeReveal.removeAttribute('data-wa-privacy-reveal');
+				activeReveal = null;
+			}
+			function setReveal(target) {
+				var next = revealContainer(target);
+				if (activeReveal && activeReveal !== next) clearReveal();
+				activeReveal = next;
+				if (activeReveal) activeReveal.setAttribute('data-wa-privacy-reveal', '1');
+			}
+			document.addEventListener('mouseover', function(e) {
+				if ((policy.reveal_mode || 'hover') === 'hover') setReveal(e.target);
+			}, true);
+			document.addEventListener('mouseout', function(e) {
+				if (activeReveal && (!e.relatedTarget || !activeReveal.contains(e.relatedTarget))) clearReveal();
+			}, true);
+			document.addEventListener('focusin', function(e) { setReveal(e.target); }, true);
+			document.addEventListener('focusout', function(e) {
+				if (activeReveal && (!e.relatedTarget || !activeReveal.contains(e.relatedTarget))) clearReveal();
+			}, true);
+			document.addEventListener('click', function(e) {
+				if ((policy.reveal_mode || 'hover') === 'click') {
+					var next = revealContainer(e.target);
+					if (activeReveal === next) clearReveal(); else setReveal(e.target);
+				} else if (!e.target.closest || !e.target.closest('[data-wa-privacy-surface]')) clearReveal();
+			}, true);
+			document.addEventListener('keydown', function(e) {
+				var mode = policy.reveal_mode || 'hover';
+				var modifier = String(policy.reveal_modifier || 'alt').toLowerCase();
+				if (mode === 'modifier' && ((modifier === 'alt' && e.altKey) || ((modifier === 'shift') && e.shiftKey) || ((modifier === 'ctrl' || modifier === 'control') && e.ctrlKey))) {
+					if (document.documentElement) document.documentElement.setAttribute('data-wa-privacy-reveal-all', '1');
 				}
+				if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
+					e.preventDefault(); e.stopPropagation(); window.togglePrivacyMode();
+				} else if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+					e.preventDefault(); e.stopPropagation(); window.requestNativeAppLock();
+				}
+			}, true);
+			document.addEventListener('keyup', function() {
+				if (document.documentElement) document.documentElement.setAttribute('data-wa-privacy-reveal-all', '0');
+			}, true);
+			window.addEventListener('blur', function() {
+				if (document.documentElement) document.documentElement.setAttribute('data-wa-privacy-reveal-all', '0');
+				clearReveal();
+			});
+			var pendingPrivacyNodes = [];
+			var tagPending = false;
+			function isWithinPrivacyRoot(node) {
+				return !!(
+					window.waDOM.closest(node, 'chatListRoot', document.body).node ||
+					window.waDOM.closest(node, 'conversationRoot', document.body).node ||
+					window.waDOM.closest(node, 'mediaViewer', document.body).node
+				);
 			}
-			function updatePrivacyHoverFromTarget(target) {
-				if (!privacyChatListRootFromTarget(target)) {
-					clearPrivacyHoverRow();
+			function queuePrivacyNode(node) {
+				if (!node || node.nodeType !== 1) return;
+				if (isWithinPrivacyRoot(node)) {
+					if (pendingPrivacyNodes.indexOf(node) < 0) pendingPrivacyNodes.push(node);
 					return;
 				}
-				var row = privacyChatRowFromTarget(target);
-				if (row) markPrivacyHoverRow(row);
+				['chatListRoot', 'conversationRoot', 'mediaViewer'].forEach(function(key) {
+					var root = window.waDOM.resolveFirst(key, node).node;
+					if (root && pendingPrivacyNodes.indexOf(root) < 0) pendingPrivacyNodes.push(root);
+				});
 			}
-			document.addEventListener('mouseover', function(e) { updatePrivacyHoverFromTarget(e.target); }, true);
-			document.addEventListener('mousemove', function(e) { updatePrivacyHoverFromTarget(e.target); }, true);
-			document.addEventListener('mouseout', function(e) {
-				var row = privacyChatRowFromTarget(e.target);
-				if (row && (!e.relatedTarget || !row.contains(e.relatedTarget))) clearPrivacyHoverRow();
-			}, true);
-
-			function applyPrivacyMode(active, silent) {
-				isPrivacyActive = !!active;
-				// State lives on <html>, never on WhatsApp's mutable <body>.
-				// All privacy selectors are descendant selectors, so they
-				// match identically from the <html> ancestor.
-				var rootEl = document.documentElement;
-				if (!rootEl) return isPrivacyActive;
-				if (isPrivacyActive) {
-					if (!document.getElementById('whatsapp-privacy-style')) {
-						var h = document.head || rootEl;
-						if (h) h.appendChild(styleEl);
+			var observer = new MutationObserver(function(mutations) {
+				if (document.hidden) return;
+				mutations.forEach(function(mutation) {
+					Array.prototype.forEach.call(mutation.addedNodes || [], queuePrivacyNode);
+				});
+				if (tagPending || !pendingPrivacyNodes.length) return;
+				tagPending = true;
+				setTimeout(function() {
+					var nodes = pendingPrivacyNodes.slice();
+					pendingPrivacyNodes.length = 0;
+					tagPending = false;
+					for (var i = 0; i < nodes.length; i++) {
+						if (nodes[i].isConnected !== false) tagPrivacySurfaces(nodes[i]);
 					}
-					rootEl.classList.add('privacy-mode');
-					if (!silent) showFloatingToast('🔒 Privacy Mode: Enabled');
-				} else {
-					rootEl.classList.remove('privacy-mode');
-					if (!silent) showFloatingToast('🔓 Privacy Mode: Disabled');
-				}
-				return isPrivacyActive;
-			}
-
-			window.togglePrivacyMode = function() {
-				// A manual toggle also cancels any pending auto-lock timer.
-				return applyPrivacyMode(!isPrivacyActive, false);
-			};
-			window.isPrivacyModeActive = function() {
-				return isPrivacyActive;
-			};
-
-			// "Blur profile photos" setting: gates the .blur-avatars layer.
-			// Applied on <html> next to .privacy-mode; persisted natively.
-			window.isBlurAvatars = function() {
-				return !!(document.documentElement && document.documentElement.classList && document.documentElement.classList.contains('blur-avatars'));
-			};
-
-			// Timestamp sparing: tag short clock/day strings so the CSS above
-			// can exclude them via :not([data-wa-time]). textContent never
-			// forces layout; each span is visited once (__waTimeSeen); the
-			// :not() selector keeps repeat runs cheap. Ticks at most every 3s,
-			// only while privacy is on and the page is visible, so the steady
-			// state cost is ~zero. Attribute writes don't trip the childList
-			// observers, so this can't feed an observer loop.
-			var WA_TIME_RE = /^(\d{1,2}:\d{2}(\s?(AM|PM))?|Today|Yesterday|Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday|Hari ini|Kemarin|Senin|Selasa|Rabu|Kamis|Jumat|Sabtu|Minggu)$/i;
-			function tagTimesIn(root) {
-				if (!root || !root.querySelectorAll) return;
-				var spans = root.querySelectorAll('span:not([data-wa-time])');
-				var n = 0;
-				for (var i = 0; i < spans.length && n < 250; i++) {
-					var s = spans[i];
-					if (s.__waTimeSeen) continue;
-					s.__waTimeSeen = true;
-					n++;
-					try {
-						var t = (s.textContent || '').trim();
-						if (WA_TIME_RE.test(t)) s.setAttribute('data-wa-time', '1');
-					} catch (e) {}
-				}
-			}
-			setInterval(function() {
-				if (!isPrivacyActive || shouldPauseBackgroundWork()) return;
-				tagTimesIn(document.getElementById('main'));
-				tagTimesIn(document.getElementById('side') || document.getElementById('pane-side'));
-			}, 3000);
-			window.setBlurAvatars = function(on) {
-				on = !!on;
-				if (document.documentElement && document.documentElement.classList) {
-					if (on) document.documentElement.classList.add('blur-avatars');
-					else document.documentElement.classList.remove('blur-avatars');
-				}
-				if (window.setBlurAvatarsNative) {
-					Promise.resolve(window.setBlurAvatarsNative(on)).catch(function() {});
-				}
-				return on;
-			};
-			if (window.getBlurAvatarsNative) {
-				window.getBlurAvatarsNative().then(function(on) {
-					if (on && document.documentElement && document.documentElement.classList) {
-						document.documentElement.classList.add('blur-avatars');
-					}
-				}).catch(function() {});
-			}
-
-			// Auto-lock on idle: the Control Center copy promises "blur chats and
-			// media when cursor is idle", so honor it. When enabled, the app
-			// blurs after a period of no mouse/keyboard activity, or immediately
-			// when the window loses focus, and unblurs on the next interaction.
-			// Persisted in localStorage so it survives reloads.
-			var AUTO_LOCK_KEY = 'wa_desk_privacy_autolock';
-			var autoLockEnabled = storageGet(AUTO_LOCK_KEY) === '1';
-			var IDLE_MS = 60000;
-			var idleTimer = null;
-			var autoLocked = false;
-
-			function isAutoLockEnabled() { return autoLockEnabled; }
-			function setAutoLockEnabled(on) {
-				autoLockEnabled = !!on;
-				storageSet(AUTO_LOCK_KEY, autoLockEnabled ? '1' : '0');
-				if (!autoLockEnabled && autoLocked) unlockFromIdle();
-				else resetIdleTimer();
-				return autoLockEnabled;
-			}
-			window.isAutoLockEnabled = isAutoLockEnabled;
-			window.setAutoLockEnabled = setAutoLockEnabled;
-			window.isPrivacyAutoLock = isAutoLockEnabled;
-			window.setPrivacyAutoLock = setAutoLockEnabled;
-
-			function lockForIdle() {
-				if (!autoLockEnabled || autoLocked) return;
-				autoLocked = true;
-				applyPrivacyMode(true, true);
-			}
-			function unlockFromIdle() {
-				if (!autoLocked) return;
-				autoLocked = false;
-				applyPrivacyMode(false, true);
-			}
-			function resetIdleTimer() {
-				if (autoLocked) unlockFromIdle();
-				clearTimeout(idleTimer);
-				if (autoLockEnabled) idleTimer = setTimeout(lockForIdle, IDLE_MS);
-			}
-
-			var activityEvents = ['mousemove', 'mousedown', 'keydown', 'scroll', 'touchstart', 'wheel'];
-			activityEvents.forEach(function(ev) {
-				window.addEventListener(ev, resetIdleTimer, { passive: true, capture: true });
+				}, 150);
 			});
-			// Losing window focus is the strongest "stepping away" signal.
-			window.addEventListener('blur', function() { if (autoLockEnabled) lockForIdle(); });
-			window.addEventListener('focus', function() { resetIdleTimer(); });
-			document.addEventListener('visibilitychange', function() {
-				if (document.hidden) { if (autoLockEnabled) lockForIdle(); }
-				else resetIdleTimer();
-			});
-			resetIdleTimer();
-
-			window.addEventListener('keydown', function(e) {
-				if ((e.metaKey || e.ctrlKey) && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
-					e.preventDefault();
-					e.stopPropagation();
-					window.togglePrivacyMode();
-				}
-			}, true);
+			var privacyObserverRoot = document.getElementById('app') || document.body;
+			if (privacyObserverRoot) observer.observe(privacyObserverRoot, { childList: true, subtree: true });
+			window.refreshPrivacyProfiles();
 		});
 
 		// Always on Top Toggle (Cmd/Ctrl + Shift + T)
@@ -2840,19 +2616,7 @@ func getInitScript(ua string) string {
 
 			var forwardingDocumentDownload = false;
 			var pendingViewerDownloadClick = false;
-			var viewerDownloadSelector = [
-				'button[data-testid*="download"]',
-				'[role="button"][data-testid*="download"]',
-				'button[aria-label*="Download" i]',
-				'button[aria-label*="Unduh" i]',
-				'[role="button"][aria-label*="Download" i]',
-				'[role="button"][aria-label*="Unduh" i]',
-				'button[title*="Download" i]',
-				'button[title*="Unduh" i]',
-				'[data-icon="download"]',
-				'[data-icon="download-refreshed"]',
-				'[data-icon*="download"]'
-			].join(',');
+			var viewerDownloadSelector = window.waDOM.selectors('mediaViewerDownloadControl').join(',');
 			function isExplicitDownloadMenuItem(target) {
 				if (!target || !target.closest) return false;
 				var item = target.closest('[role="menuitem"]');
@@ -2870,11 +2634,11 @@ func getInitScript(ua string) string {
 			}, true);
 
 			function findVisibleViewerDownloadControl() {
-				var candidates = document.querySelectorAll(viewerDownloadSelector);
+				var candidates = window.waDOM.resolveCandidatesInDOMOrder('mediaViewerDownloadControl', document);
 				var best = null;
 				var bestScore = -1;
 				for (var i = 0; i < candidates.length; i++) {
-					var raw = candidates[i];
+					var raw = candidates[i].node;
 					if (raw.closest && raw.closest('#wa-doc-modal-overlay')) continue;
 					var control = (raw.closest && raw.closest('button, a, [role="button"]')) || raw;
 					var rect = control.getBoundingClientRect();
@@ -2906,10 +2670,10 @@ func getInitScript(ua string) string {
 			}
 
 			function findDocumentDownloadControl(start) {
-				var selector = 'a[download], button[data-testid*="download"], [role="button"][data-testid*="download"], button[aria-label*="Unduh"], button[aria-label*="Download"], [role="button"][aria-label*="Unduh"], [role="button"][aria-label*="Download"], [data-icon="download"], [data-icon="download-refreshed"]';
 				var node = start;
 				for (var depth = 0; node && node !== document.body && depth < 12; depth++, node = node.parentElement) {
-					var found = node.querySelector && node.querySelector(selector);
+					var candidates = window.waDOM.resolveCandidatesInDOMOrder('documentDownloadControl', node);
+					var found = candidates.length ? candidates[0].node : null;
 					if (found) return found.closest('button, a, [role="button"]') || found;
 				}
 				return null;
@@ -2960,7 +2724,7 @@ func getInitScript(ua string) string {
 
 				// Completely ignore clicks inside media-viewer or custom modal overlay
 				if (typeof el.closest === 'function') {
-					if (el.closest('[data-testid="media-viewer"]') || el.closest('#wa-doc-modal-overlay')) {
+					if (window.waDOM.closest(el, 'mediaViewer').status === 'found' || el.closest('#wa-doc-modal-overlay')) {
 						return;
 					}
 				}
@@ -3100,12 +2864,13 @@ func getInitScript(ua string) string {
 				// panel (dialog/viewer) or the current chat pane. Scanning the
 				// whole document on every chat-list mutation is exactly the
 				// background churn this app is supposed to avoid.
-				var scope = document.querySelector('[role="dialog"], [data-testid="media-viewer"]') ||
-					document.getElementById('main');
+				var scopeCandidates = window.waDOM.resolveCandidatesInDOMOrder('savedFileScanPanel', document);
+				var scope = (scopeCandidates.length && scopeCandidates[0].node) ||
+					window.waDOM.resolveFirst('conversationRoot', document).node;
 				if (!scope) return;
-				var rows = scope.querySelectorAll('[role="row"], [data-testid="cell-frame-outer"], .message-in, .message-out');
+				var rows = window.waDOM.resolveCandidatesInDOMOrder('savedFileMessageRow', scope);
 				for (var i = 0; i < rows.length; i++) {
-					var row = rows[i];
+					var row = rows[i].node;
 					if (row.__waSavedBadge) continue;
 					var name = itemFileName(row);
 					if (name) decorateItem(row, name, findFileNameElement(row));
@@ -3325,7 +3090,7 @@ func getInitScript(ua string) string {
 				if (document.getElementById('wa-toolbar-settings-btn')) return;
 
 				// Target WhatsApp Web's left header above chats
-				var header = document.querySelector('#side header') || document.querySelector('header');
+				var header = window.waDOM.resolveFirst('settingsHeader', document).node;
 				if (!header) return;
 
 				// Header descendants change frequently. Use its direct trailing child, not
@@ -3474,7 +3239,7 @@ func getInitScript(ua string) string {
 						}
 						// Narrow the observed root once the header exists.
 						if (!toolbarNarrowed) {
-							var hdr = document.querySelector('#side header');
+						var hdr = window.waDOM.resolveOne('sideHeader', document).node;
 							if (hdr && hdr.nodeType) {
 								toolbarNarrowed = true;
 								try {
@@ -3489,9 +3254,11 @@ func getInitScript(ua string) string {
 				// Prefer the header itself: the chat list churns constantly and
 				// never affects our button. Fall back to #side, then body, and
 				// narrow down to the header as soon as it exists.
-				var root = document.querySelector('#side header') || document.querySelector('#side') || document.body || document.documentElement || document;
+				var sideHeader = window.waDOM.resolveFirst('sideHeader', document);
+				var sideRoot = window.waDOM.resolveFirst('chatListRoot', document);
+				var root = sideHeader.node || sideRoot.node || document.body || document.documentElement || document;
 				if (root && root.nodeType) {
-					toolbarNarrowed = !!document.querySelector('#side header');
+					toolbarNarrowed = !!sideHeader.node;
 					try {
 						toolbarObserver.disconnect();
 						toolbarObserver.observe(root, { childList: true, subtree: true });
@@ -3591,32 +3358,35 @@ func getInitScript(ua string) string {
 					'<button id="wa-action-toggle-notifications" class="wa-card-btn" style="flex-shrink:0;min-width:78px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border-width:1px;border-style:solid;">Disable</button>';
 				quickGrid.appendChild(cardNotifications);
 
-				// Card 1: Privacy Mode
+				// Card: privacy profiles and native app lock.
 				var cardPrivacy = document.createElement('div');
 				cardPrivacy.className = 'wa-modal-card';
-				cardPrivacy.style.cssText = 'border-radius:0;border-width:0 0 1px;border-style:solid;padding:12px 0;display:flex;flex-direction:column;gap:8px;';
+				cardPrivacy.style.cssText = 'border-radius:0;border-width:0 0 1px;border-style:solid;padding:12px 0;display:flex;flex-direction:column;gap:10px;';
 				cardPrivacy.innerHTML = '' +
 					'<div style="display:flex;align-items:center;justify-content:space-between;gap:16px;">' +
-					'  <div style="flex:1;min-width:0;">' +
-					'    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px;">' +
-					'      <strong class="wa-text-primary" style="font-size:12.5px;">Privacy Mode</strong>' +
-					'      <span id="wa-badge-priv" style="font-size:10px;padding:1px 5px;border-radius:4px;font-weight:600;">...</span>' +
-					'    </div>' +
-					'    <div class="wa-text-muted" style="font-size:11px;">Hide names, previews, timestamps & message text until you turn this off. Hover a chat to reveal its details; reply box stays usable.</div>' +
-					'  </div>' +
-					'  <div style="display:flex;align-items:center;justify-content:flex-end;gap:12px;min-width:150px;flex-shrink:0;">' +
+					'  <div><strong class="wa-text-primary" style="font-size:12.5px;display:block;">Privacy profiles</strong>' +
+					'  <span class="wa-text-muted" style="font-size:11px;">Choose which WhatsApp surfaces are blurred. Visual blur does not lock the account or session.</span></div>' +
+					'  <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">' +
 					'    <span class="wa-text-muted" style="font-size:10px;font-family:monospace;">' + (isMac ? 'Cmd' : 'Ctrl') + '+Shift+P</span>' +
-					'    <button id="wa-action-toggle-priv" class="wa-card-btn" style="min-width:78px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border-width:1px;border-style:solid;">Toggle</button>' +
+					'    <button id="wa-action-toggle-priv" class="wa-card-btn" style="min-width:78px;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:600;cursor:pointer;border-width:1px;border-style:solid;">Toggle all</button>' +
 					'  </div>' +
 					'</div>' +
-					'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">' +
-					'  <input type="checkbox" id="wa-priv-autolock" style="width:14px;height:14px;accent-color:#00a884;cursor:pointer;margin:0;" />' +
-					'  <span class="wa-text-muted" style="font-size:11px;">Auto-lock when idle or window loses focus (unblurs on activity)</span>' +
+					'<label class="wa-text-muted" style="font-size:11px;display:flex;align-items:center;gap:8px;">Active profile' +
+					'  <select id="wa-privacy-profile" aria-label="Active privacy profile" style="min-width:190px;padding:5px;border-radius:6px;">' +
+					'    <option value="normal">Normal</option><option value="office">Office</option><option value="presentation">Presentation</option><option value="maximum-privacy">Maximum Privacy</option><option value="custom">Custom</option>' +
+					'  </select>' +
 					'</label>' +
-					'<label style="display:flex;align-items:center;gap:8px;cursor:pointer;user-select:none;">' +
-					'  <input type="checkbox" id="wa-blur-avatars" style="width:14px;height:14px;accent-color:#00a884;cursor:pointer;margin:0;" />' +
-					'  <span class="wa-text-muted" style="font-size:11px;">Also blur profile photos (hover to peek)</span>' +
-					'</label>';
+					'<div id="wa-privacy-surface-controls" style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 12px;"></div>' +
+					'<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">' +
+					'  <label class="wa-text-muted" style="font-size:11px;">Reveal <select id="wa-privacy-reveal-mode" aria-label="Privacy reveal method" style="padding:4px;border-radius:5px;"><option value="hover">Hover or keyboard focus</option><option value="click">Click or keyboard focus</option><option value="modifier">Hold modifier key</option></select></label>' +
+					'  <label class="wa-text-muted" style="font-size:11px;">Key <select id="wa-privacy-reveal-modifier" aria-label="Privacy reveal modifier" style="padding:4px;border-radius:5px;"><option value="alt">Alt</option><option value="shift">Shift</option><option value="ctrl">Ctrl</option></select></label>' +
+					'  <button id="wa-privacy-copy-custom" class="wa-card-btn" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border-width:1px;border-style:solid;">Copy to Custom</button>' +
+					'  <button id="wa-privacy-reset" class="wa-card-btn" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border-width:1px;border-style:solid;">Reset built-in profiles</button>' +
+					'</div>' +
+					'<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid rgba(127,127,127,.25);padding-top:10px;">' +
+					'  <div><strong class="wa-text-primary" style="font-size:12px;display:block;">App lock</strong><span id="wa-lock-status" class="wa-text-muted" style="font-size:11px;">Checking lock settings…</span></div>' +
+					'  <div style="display:flex;gap:6px;"><button id="wa-lock-now" class="wa-card-btn" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border-width:1px;border-style:solid;">Lock now</button><button id="wa-lock-manage" class="wa-card-btn" style="padding:4px 8px;border-radius:6px;font-size:11px;cursor:pointer;border-width:1px;border-style:solid;">Manage lock</button></div>' +
+					'</div>';
 				quickGrid.appendChild(cardPrivacy);
 
 				// Card 2: Always on Top
@@ -3980,26 +3750,88 @@ func getInitScript(ua string) string {
 					if (window.togglePrivacyMode) window.togglePrivacyMode();
 					updateBadges();
 				};
-				var autoLockBox = document.getElementById('wa-priv-autolock');
-				if (autoLockBox) {
-					autoLockBox.checked = !!(window.isPrivacyAutoLock && window.isPrivacyAutoLock());
-					autoLockBox.onchange = function() {
-						if (window.setPrivacyAutoLock) window.setPrivacyAutoLock(autoLockBox.checked);
-						showFloatingToast(autoLockBox.checked ?
-							'🔒 Privacy auto-lock: on (blurs after 60s idle)' :
-							'🔓 Privacy auto-lock: off');
-					};
+				var profileSelect = document.getElementById('wa-privacy-profile');
+				var privacyControls = document.getElementById('wa-privacy-surface-controls');
+				var privacyFields = [
+					['chat_names', 'Chat names'], ['group_names', 'Group names'], ['avatars', 'Avatars'],
+					['preview', 'Message previews'], ['timestamps', 'Timestamps'], ['unread_count', 'Unread counts'],
+					['message_text', 'Message text'], ['images', 'Images'], ['videos', 'Videos'], ['stickers', 'Stickers'],
+					['quoted_content', 'Quoted or replied content'], ['voice_note_details', 'Voice-note details'],
+					['header_name', 'Conversation name'], ['header_avatar', 'Conversation avatar'],
+					['header_subtitle', 'Conversation subtitle'], ['media_viewer', 'Media viewer']
+				];
+				function refreshPrivacyCard() {
+					if (!window.getPrivacyProfiles || !privacyControls) return;
+					var currentID = window.getActivePrivacyProfile ? window.getActivePrivacyProfile() : 'normal';
+					var profiles = window.getPrivacyProfiles();
+					var active = profiles.filter(function(profile) { return profile.id === currentID; })[0];
+					var supported = !!window.getPrivacyProfileStateNative;
+					profileSelect.value = currentID;
+					profileSelect.disabled = !supported;
+					privacyControls.innerHTML = '';
+					privacyFields.forEach(function(field) {
+						var label = document.createElement('label');
+						label.style.cssText = 'display:flex;align-items:center;gap:7px;cursor:pointer;user-select:none;font-size:11px;';
+						var input = document.createElement('input');
+						input.type = 'checkbox';
+						input.checked = !!(active && active.privacy && active.privacy[field[0]]);
+						input.disabled = !supported || currentID !== 'custom';
+						input.setAttribute('aria-label', field[1]);
+						input.onchange = function() {
+							if (window.setCustomPrivacySurface) window.setCustomPrivacySurface(field[0], input.checked).then(refreshPrivacyCard);
+						};
+						var text = document.createElement('span');
+						text.textContent = field[1];
+						label.appendChild(input);
+						label.appendChild(text);
+						privacyControls.appendChild(label);
+					});
+					var revealMode = document.getElementById('wa-privacy-reveal-mode');
+					var revealModifier = document.getElementById('wa-privacy-reveal-modifier');
+					var editable = supported && currentID === 'custom';
+					if (active && active.privacy) {
+						revealMode.value = active.privacy.reveal_mode || 'hover';
+						revealModifier.value = active.privacy.reveal_modifier || 'alt';
+					}
+					revealMode.disabled = !editable;
+					revealModifier.disabled = !editable;
+					document.getElementById('wa-privacy-copy-custom').disabled = !supported;
+					document.getElementById('wa-privacy-reset').disabled = !supported;
+					var lockStatus = document.getElementById('wa-lock-status');
+					var lockSupported = !!window.getLockPolicyNative;
+				document.getElementById('wa-lock-manage').disabled = !lockSupported;
+				document.getElementById('wa-lock-now').disabled = !window.requestAppLockNative;
+				if (!lockSupported) lockStatus.textContent = 'Native app lock is available on Windows and Linux.';
+				else Promise.resolve(window.getLockPolicyNative()).then(function(raw) {
+						var lock = typeof raw === 'string' ? JSON.parse(raw) : raw;
+						lockStatus.textContent = lock.enabled ? 'Enabled · ' + (lock.idle_timeout_seconds ? 'idle ' + lock.idle_timeout_seconds + 's' : 'manual') + (lock.lock_on_minimize ? ' · minimize' : '') + (lock.lock_on_startup ? ' · startup' : '') : 'Disabled';
+					}).catch(function() { lockStatus.textContent = 'Lock status unavailable'; });
 				}
-				var avatarBox = document.getElementById('wa-blur-avatars');
-				if (avatarBox) {
-					avatarBox.checked = !!(window.isBlurAvatars && window.isBlurAvatars());
-					avatarBox.onchange = function() {
-						if (window.setBlurAvatars) window.setBlurAvatars(avatarBox.checked);
-						showFloatingToast(avatarBox.checked ?
-							'🙈 Profile photos: blurred (hover to peek)' :
-							'🙉 Profile photos: visible');
-					};
-				}
+				if (profileSelect) profileSelect.onchange = function() {
+					window.selectPrivacyProfile(profileSelect.value).then(refreshPrivacyCard);
+				};
+				window.addEventListener('wa-privacy-profile-changed', refreshPrivacyCard);
+				if (window.refreshPrivacyProfiles) window.refreshPrivacyProfiles().then(refreshPrivacyCard);
+				document.getElementById('wa-privacy-copy-custom').onclick = function() {
+					if (window.copyCurrentPrivacyProfileToCustom) window.copyCurrentPrivacyProfileToCustom().then(refreshPrivacyCard);
+				};
+				document.getElementById('wa-privacy-reset').onclick = function() {
+					if (window.resetPrivacyProfiles) window.resetPrivacyProfiles().then(refreshPrivacyCard);
+				};
+				document.getElementById('wa-privacy-reveal-mode').onchange = function() {
+					var modifier = document.getElementById('wa-privacy-reveal-modifier').value;
+					if (window.setCustomPrivacyReveal) window.setCustomPrivacyReveal(this.value, modifier).then(refreshPrivacyCard);
+				};
+				document.getElementById('wa-privacy-reveal-modifier').onchange = function() {
+					var mode = document.getElementById('wa-privacy-reveal-mode').value;
+					if (window.setCustomPrivacyReveal) window.setCustomPrivacyReveal(mode, this.value).then(refreshPrivacyCard);
+				};
+				document.getElementById('wa-lock-now').onclick = function() {
+					if (window.requestNativeAppLock) window.requestNativeAppLock();
+				};
+				document.getElementById('wa-lock-manage').onclick = function() {
+					if (window.manageAppLockNative) Promise.resolve(window.manageAppLockNative()).then(refreshPrivacyCard);
+				};
 				document.getElementById('wa-action-toggle-pin').onclick = function() {
 					if (window.toggleAlwaysOnTop) {
 						window.toggleAlwaysOnTop().then(function() { updateBadges(); });
@@ -4142,11 +3974,11 @@ func getInitScript(ua string) string {
 		waRunModule('escape-chat', function() {
 			if (__WA_GOOS !== 'darwin') return;
 			function nativeOverlayOpen() {
-				return !!document.querySelector('#wa-settings-overlay, #wa-doc-modal-overlay, #wa-onboarding-overlay, #wa-recovery-overlay, [data-testid="media-viewer"]');
+				return !!document.querySelector('#wa-settings-overlay, #wa-doc-modal-overlay, #wa-onboarding-overlay, #wa-recovery-overlay') ||
+					!!window.waDOM.resolveFirst('mediaViewer', document).node;
 			}
 			function activeChatHeader() {
-				var main = document.getElementById('main');
-				return main && main.querySelector('header');
+				return window.waDOM.resolveFirst('conversationHeader', document).node;
 			}
 			function closeChatFromEscape() {
 				if (nativeOverlayOpen()) return false;
@@ -4314,6 +4146,7 @@ func getInitScript(ua string) string {
 		});
 
 	` + "\n" + getOnboardingScript()
+	script = strings.Replace(script, "// __WA_DOM_ADAPTER__", domAdapterSource, 1)
 	// Single source of truth: every UI version string flows from appVersion
 	// (overridable at link time via -ldflags "-X main.appVersion=...").
 	return strings.ReplaceAll(script, "__WA_APP_VERSION__", appVersion)
