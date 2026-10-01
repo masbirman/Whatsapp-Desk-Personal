@@ -114,6 +114,7 @@ static void setWhatsAppDeskKeepAbove(int enable) {
 
 #define TRAY_BUS_NAME "org.kde.StatusNotifierItem-whatsapp-desk"
 #define TRAY_OBJ_PATH "/StatusNotifierItem"
+#define TRAY_MENU_PATH "/StatusNotifierMenu"
 
 static GDBusConnection* g_dbus_conn = NULL;
 static guint g_dbus_reg_id = 0;
@@ -274,12 +275,49 @@ static const gchar tray_introspection_xml[] =
 	"    <property name='AttentionMovieName' type='s' access='read'/>"
 	"    <property name='ToolTip' type='(sa(iiay)ss)' access='read'/>"
 	"    <property name='Category' type='s' access='read'/>"
+	"    <property name='Menu' type='o' access='read'/>"
 	"    <signal name='NewTitle'/>"
 	"    <signal name='NewStatus'/>"
 	"    <signal name='NewIcon'/>"
 	"    <signal name='NewAttentionIcon'/>"
 	"    <signal name='NewOverlayIcon'/>"
 	"    <signal name='NewToolTip'/>"
+	"  </interface>"
+	"  <interface name='com.canonical.dbusmenu'>"
+	"    <method name='GetLayout'>"
+	"      <arg name='parentId' type='i' direction='in'/>"
+	"      <arg name='recursionDepth' type='i' direction='in'/>"
+	"      <arg name='propertyNames' type='as' direction='in'/>"
+	"      <arg name='revision' type='u' direction='out'/>"
+	"      <arg name='layout' type='(ia{sv}av)' direction='out'/>"
+	"    </method>"
+	"    <method name='GetGroupProperties'>"
+	"      <arg name='ids' type='ai' direction='in'/>"
+	"      <arg name='propertyNames' type='as' direction='in'/>"
+	"      <arg name='properties' type='a(ia{sv})' direction='out'/>"
+	"    </method>"
+	"    <method name='AboutToShow'>"
+	"      <arg name='id' type='i' direction='in'/>"
+	"      <arg name='needUpdate' type='b' direction='out'/>"
+	"    </method>"
+	"    <method name='AboutToShowGroup'>"
+	"      <arg name='ids' type='ai' direction='in'/>"
+	"      <arg name='updatesNeeded' type='ai' direction='out'/>"
+	"    </method>"
+	"    <method name='Event'>"
+	"      <arg name='id' type='i' direction='in'/>"
+	"      <arg name='eventId' type='s' direction='in'/>"
+	"      <arg name='data' type='v' direction='in'/>"
+	"      <arg name='timestamp' type='u' direction='in'/>"
+	"    </method>"
+	"    <method name='EventGroup'>"
+	"      <arg name='events' type='a(isvu)' direction='in'/>"
+	"      <arg name='idErrors' type='ai' direction='out'/>"
+	"    </method>"
+	"    <signal name='ItemsPropertiesUpdated'>"
+	"      <arg name='updatedProps' type='a(ia{sv})' direction='out'/>"
+	"      <arg name='removedProps' type='a(ias)' direction='out'/>"
+	"    </signal>"
 	"  </interface>"
 	"  <interface name='org.freedesktop.DBus.Properties'>"
 	"    <method name='Get'>"
@@ -349,6 +387,9 @@ static GVariant* tray_get_property(GDBusConnection* conn, const gchar* sender, c
 		}
 		if (strcmp(property, "Category") == 0) {
 			return g_variant_new_string("ApplicationStatus");
+		}
+		if (strcmp(property, "Menu") == 0) {
+			return g_variant_new_object_path(TRAY_MENU_PATH);
 		}
 		if (strcmp(property, "IconName") == 0) {
 			return g_variant_new_string("whatsapp-desk");
@@ -442,6 +483,164 @@ static const GDBusInterfaceVTable tray_vtable = {
 	.set_property = NULL,
 };
 
+// --- dbusmenu (com.canonical.dbusmenu) --------------------------------------
+// The tray menu items. Event dispatch reaches Go through
+// whatsappDeskTrayMenuEvent (implemented in Go below); page-touching actions
+// run on the GTK main loop because g_bus_own_name was started on it.
+
+extern void whatsappDeskTrayMenuEvent(int id);
+
+static guint g_menu_reg_id = 0;
+static int g_tray_notifications_enabled = 1;
+static guint g_menu_revision = 2;
+
+typedef struct {
+	int id;
+	const char* label;
+	int separator;
+} tray_menu_item;
+
+static const tray_menu_item menu_items[] = {
+	{1, "Open", 0},
+	{2, "Toggle privacy mode", 0},
+	{3, "Lock now", 0},
+	{4, "Desktop notifications", 0},
+	{5, "Control Center", 0},
+	{6, "", 1},
+	{7, "Quit", 0},
+};
+#define MENU_ITEM_COUNT (int)(sizeof(menu_items) / sizeof(menu_items[0]))
+
+// Builds one dbusmenu item as a floating (ia{sv}av) variant. The root item
+// (id 0) carries the full child list.
+static GVariant* menu_item_variant(int id) {
+	GVariantBuilder props;
+	g_variant_builder_init(&props, G_VARIANT_TYPE("a{sv}"));
+	GVariantBuilder children;
+	g_variant_builder_init(&children, G_VARIANT_TYPE("av"));
+	if (id == 0) {
+		g_variant_builder_add(&props, "{sv}", "children-display", g_variant_new_string("submenu"));
+		for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+			g_variant_builder_add(&children, "v", menu_item_variant(menu_items[i].id));
+		}
+	} else {
+		for (int i = 0; i < MENU_ITEM_COUNT; i++) {
+			if (menu_items[i].id != id) continue;
+			if (menu_items[i].separator) {
+				g_variant_builder_add(&props, "{sv}", "type", g_variant_new_string("separator"));
+			} else {
+				g_variant_builder_add(&props, "{sv}", "type", g_variant_new_string("standard"));
+				g_variant_builder_add(&props, "{sv}", "label", g_variant_new_string(menu_items[i].label));
+				if (id == 4) {
+					g_variant_builder_add(&props, "{sv}", "toggle-state", g_variant_new_int32(g_tray_notifications_enabled ? 1 : 0));
+				}
+			}
+			break;
+		}
+	}
+	GVariant* propsValue = g_variant_builder_end(&props);
+	GVariant* childrenValue = g_variant_builder_end(&children);
+	return g_variant_new("(i@a{sv}@av)", id, propsValue, childrenValue);
+}
+
+static int menu_item_props_into(GVariantBuilder* dest, int id) {
+	GVariant* item = menu_item_variant(id);
+	// Child index 1 is the property dict. g_variant_get with a NULL for the
+	// leading int misaligns its varargs walk, so read children explicitly.
+	GVariant* inner = g_variant_get_child_value(item, 1);
+	GVariantIter iter;
+	GVariant* value;
+	const gchar* key;
+	g_variant_builder_init(dest, G_VARIANT_TYPE("a{sv}"));
+	g_variant_iter_init(&iter, inner);
+	int count = 0;
+	while (g_variant_iter_loop(&iter, "{sv}", &key, &value)) {
+		g_variant_builder_add(dest, "{sv}", key, value);
+		count++;
+	}
+	g_variant_unref(inner);
+	g_variant_unref(item);
+	return count;
+}
+
+static void menu_method_call(GDBusConnection* conn, const gchar* sender, const gchar* object_path, const gchar* interface_name, const gchar* method_name, GVariant* params, GDBusMethodInvocation* invocation, gpointer user_data) {
+	(void)conn; (void)sender; (void)object_path; (void)interface_name; (void)user_data;
+	if (strcmp(method_name, "GetLayout") == 0) {
+		gint32 parent = 0;
+		g_variant_get(params, "(iias)", &parent, NULL, NULL);
+		GVariant* layout = menu_item_variant((int)parent);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(u@(ia{sv}av))", g_menu_revision, layout));
+		return;
+	}
+	if (strcmp(method_name, "GetGroupProperties") == 0) {
+		GVariantBuilder items;
+		g_variant_builder_init(&items, G_VARIANT_TYPE("a(ia{sv})"));
+		GVariantIter iter;
+		gint32 id;
+		// params is the tuple "(aias)": iterate the first child.
+		GVariant* ids = g_variant_get_child_value(params, 0);
+		g_variant_iter_init(&iter, ids);
+		while (g_variant_iter_loop(&iter, "i", &id)) {
+			GVariantBuilder props;
+			menu_item_props_into(&props, (int)id);
+			g_variant_builder_add(&items, "(ia{sv})", (gint32)id, &props);
+		}
+		g_variant_iter_free(&iter);
+		g_variant_unref(ids);
+		GVariant* itemsValue = g_variant_builder_end(&items);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(@a(ia{sv}))", itemsValue));
+		return;
+	}
+	if (strcmp(method_name, "AboutToShow") == 0) {
+		// Always report an update so hosts re-fetch the (live) toggle state.
+		g_dbus_method_invocation_return_value(invocation, g_variant_new("(b)", TRUE));
+		return;
+	}
+	if (strcmp(method_name, "AboutToShowGroup") == 0) {
+		GVariantBuilder none;
+		g_variant_builder_init(&none, G_VARIANT_TYPE("ai"));
+		GVariant* noneValue = g_variant_builder_end(&none);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(@ai)", noneValue));
+		return;
+	}
+	if (strcmp(method_name, "Event") == 0) {
+		gint32 id = 0;
+		const gchar* event_id = NULL;
+		g_variant_get(params, "(i&svu)", &id, &event_id, NULL, NULL);
+		if (event_id && strcmp(event_id, "clicked") == 0) {
+			whatsappDeskTrayMenuEvent((int)id);
+		}
+		// Event has no out args; an empty reply still must be sent or the
+		// calling host blocks forever.
+		g_dbus_method_invocation_return_value(invocation, g_variant_new("()"));
+		return;
+	}
+	if (strcmp(method_name, "EventGroup") == 0) {
+		GVariantBuilder none;
+		g_variant_builder_init(&none, G_VARIANT_TYPE("ai"));
+		GVariant* noneValue = g_variant_builder_end(&none);
+		g_dbus_method_invocation_return_value(invocation,
+			g_variant_new("(@ai)", noneValue));
+		return;
+	}
+	g_dbus_method_invocation_return_error(invocation, G_DBUS_ERROR, G_DBUS_ERROR_UNKNOWN_METHOD, "Unknown dbusmenu method %s", method_name);
+}
+
+static const GDBusInterfaceVTable menu_vtable = {
+	.method_call = menu_method_call,
+	.get_property = NULL,
+	.set_property = NULL,
+};
+
+// Called from Go (same translation-unit rule as above).
+static void tray_set_notifications_enabled_go(int enabled) {
+	g_tray_notifications_enabled = enabled ? 1 : 0;
+	g_menu_revision++;
+}
+
 static void tray_emit(const char* signal) {
 	if (!g_dbus_conn) return;
 	GError* error = NULL;
@@ -467,8 +666,10 @@ static void tray_update_overlay_icon(int count) {
 	tray_emit("NewTitle");
 }
 
-// Exported for Go
-void tray_update_overlay_icon_go(int count) {
+// Called from Go. Static so the //export preamble duplication does not
+// produce a duplicate symbol; the Go call site resolves inside this same
+// translation unit, sharing the tray state statics above.
+static void tray_update_overlay_icon_go(int count) {
 	tray_update_overlay_icon(count);
 }
 
@@ -491,6 +692,25 @@ static void tray_on_bus_acquired(GDBusConnection* conn, const gchar* name, gpoin
 		return;
 	}
 
+	// com.canonical.dbusmenu is registered on its own object path; tray
+	// hosts discover it through the StatusNotifierItem "Menu" property.
+	// Interface order in the parsed node is not fixed, so look it up by name.
+	for (int i = 0; g_introspection->interfaces[i]; i++) {
+		if (strcmp(g_introspection->interfaces[i]->name, "com.canonical.dbusmenu") != 0) continue;
+		GError* menuError = NULL;
+		g_menu_reg_id = g_dbus_connection_register_object(conn,
+			TRAY_MENU_PATH,
+			g_introspection->interfaces[i],
+			&menu_vtable,
+			NULL, NULL, &menuError);
+		if (menuError) {
+			g_print("Failed to register tray menu: %s\n", menuError->message);
+			g_error_free(menuError);
+			g_menu_reg_id = 0;
+		}
+		break;
+	}
+
 	GVariant* params = g_variant_new("(s)", TRAY_BUS_NAME);
 	GError* callError = NULL;
 	g_dbus_connection_call_sync(conn,
@@ -511,6 +731,10 @@ static void tray_on_name_lost(GDBusConnection* conn, const gchar* name, gpointer
 	if (g_dbus_reg_id) {
 		g_dbus_connection_unregister_object(conn, g_dbus_reg_id);
 		g_dbus_reg_id = 0;
+	}
+	if (g_menu_reg_id) {
+		g_dbus_connection_unregister_object(conn, g_menu_reg_id);
+		g_menu_reg_id = 0;
 	}
 	if (g_introspection) {
 		g_dbus_node_info_unref(g_introspection);
@@ -554,6 +778,10 @@ static void tray_shutdown(void) {
 		if (g_dbus_reg_id) {
 			g_dbus_connection_unregister_object(g_dbus_conn, g_dbus_reg_id);
 			g_dbus_reg_id = 0;
+		}
+		if (g_menu_reg_id) {
+			g_dbus_connection_unregister_object(g_dbus_conn, g_menu_reg_id);
+			g_menu_reg_id = 0;
 		}
 		if (g_introspection) {
 			g_dbus_node_info_unref(g_introspection);
@@ -766,10 +994,57 @@ func b2i(b bool) int {
 }
 
 // System Tray bindings
+
+// linuxTrayActions are set by runApp before the tray starts; menu events
+// arrive on the GTK main loop, so the closures may touch the webview
+// directly (matching the bind handlers' threading contract).
+var linuxTrayActions struct {
+	Open                 func()
+	Privacy              func()
+	Lock                 func()
+	Notifications        func()
+	Settings             func()
+	Quit                 func()
+	NotificationsEnabled func() bool
+}
+
+//export whatsappDeskTrayMenuEvent
+func whatsappDeskTrayMenuEvent(id C.int) {
+	switch int(id) {
+	case 1:
+		if linuxTrayActions.Open != nil {
+			linuxTrayActions.Open()
+		}
+	case 2:
+		if linuxTrayActions.Privacy != nil {
+			linuxTrayActions.Privacy()
+		}
+	case 3:
+		if linuxTrayActions.Lock != nil {
+			linuxTrayActions.Lock()
+		}
+	case 4:
+		if linuxTrayActions.Notifications != nil {
+			linuxTrayActions.Notifications()
+		}
+	case 5:
+		if linuxTrayActions.Settings != nil {
+			linuxTrayActions.Settings()
+		}
+	case 7:
+		if linuxTrayActions.Quit != nil {
+			linuxTrayActions.Quit()
+		}
+	}
+}
+
 func initSystemTrayLinux(iconPath string) {
 	cPath := C.CString(iconPath)
 	defer C.free(unsafe.Pointer(cPath))
 	C.tray_init(cPath)
+	if linuxTrayActions.NotificationsEnabled != nil {
+		C.tray_set_notifications_enabled_go(C.int(b2i(linuxTrayActions.NotificationsEnabled())))
+	}
 }
 
 func shutdownSystemTrayLinux() {
@@ -991,6 +1266,29 @@ func runApp() {
 	})
 
 	iconPath := ensureAppIconFileLinux(userDataDir)
+
+	// Tray menu actions (M4-06). Menu events arrive on the GTK main loop, so
+	// page-touching closures may call w.Eval directly.
+	linuxTrayActions.Open = func() { C.tray_show_window() }
+	linuxTrayActions.Privacy = func() {
+		w.Eval("if (window.togglePrivacyMode) window.togglePrivacyMode();")
+	}
+	linuxTrayActions.Lock = func() {
+		requestNativeAppLock(uintptr(w.Window()))
+	}
+	linuxTrayActions.Notifications = func() {
+		enabled := !getNotificationsEnabled()
+		if setNotificationsEnabled(enabled) {
+			C.tray_set_notifications_enabled_go(C.int(b2i(enabled)))
+		}
+	}
+	linuxTrayActions.NotificationsEnabled = getNotificationsEnabled
+	linuxTrayActions.Settings = func() {
+		w.Eval("if (window.showSettingsModal) window.showSettingsModal();")
+	}
+	linuxTrayActions.Quit = func() {
+		C.gtk_main_quit()
+	}
 
 	// Initialize system tray
 	initSystemTrayLinux(iconPath)
