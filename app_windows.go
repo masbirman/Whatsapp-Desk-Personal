@@ -30,6 +30,7 @@ var (
 	dwmapi                       = windows.NewLazySystemDLL("dwmapi.dll")
 	procCreateMutex              = kernel32.NewProc("CreateMutexW")
 	procFindWindow               = user32.NewProc("FindWindowW")
+	procIsWindowVisible          = user32.NewProc("IsWindowVisible")
 	procSetFgWindow              = user32.NewProc("SetForegroundWindow")
 	procShowNormal               = user32.NewProc("ShowWindow")
 	procDwmSetAttr               = dwmapi.NewProc("DwmSetWindowAttribute")
@@ -407,9 +408,15 @@ func checkSingleInstance() (uintptr, bool) {
 	if err == windows.ERROR_ALREADY_EXISTS {
 		titlePtr, _ := syscall.UTF16PtrFromString(windowTitle)
 		hwnd, _, _ := procFindWindow.Call(0, uintptr(unsafe.Pointer(titlePtr)))
+		// Only raise a visible window. A hidden main window means the native
+		// app lock is active; notification/tray activation must never reveal
+		// it (the lock prompt is the only way back in).
 		if hwnd != 0 {
-			procShowNormal.Call(hwnd, 9) // SW_RESTORE
-			procSetFgWindow.Call(hwnd)
+			visible, _, _ := procIsWindowVisible.Call(hwnd)
+			if visible != 0 {
+				procShowNormal.Call(hwnd, 9) // SW_RESTORE
+				procSetFgWindow.Call(hwnd)
+			}
 		}
 		return handle, false
 	}

@@ -567,6 +567,7 @@ import "C"
 
 import (
 	_ "embed"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -587,6 +588,10 @@ var embeddedIconPNG []byte
 
 const (
 	userAgentLinux = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36"
+
+	// Upper bound for one desktop-notification command; an unresponsive
+	// notification daemon must never stall a caller goroutine for long.
+	nativeNotificationTimeout = 10 * time.Second
 )
 
 var (
@@ -716,11 +721,27 @@ func ensureAppIconFileLinux(dir string) string {
 	return iconPath
 }
 
-func showNativeNotification(title, message, iconPath string) {
+// buildNotifySendArgs produces the notify-send argument list. The `--`
+// separator keeps a title that starts with "-" from being parsed as an
+// option, so page-supplied text can never inject flags.
+func buildNotifySendArgs(title, message, iconPath string) []string {
+	args := []string{"--app-name=WhatsApp Desk"}
 	if iconPath != "" {
-		_ = exec.Command("notify-send", "-a", "WhatsApp Desk", "-i", iconPath, title, message).Run()
-	} else {
-		_ = exec.Command("notify-send", "-a", "WhatsApp Desk", title, message).Run()
+		args = append(args, "--icon", iconPath)
+	}
+	args = append(args, "--", title, message)
+	return args
+}
+
+// showNativeNotification is the Ubuntu/De desktop driver (M4-03). A missing
+// notify-send binary or unresponsive daemon must fail safely: bounded by a
+// timeout, logged without content, and never blocking the app.
+func showNativeNotification(title, message, iconPath string) {
+	ctx, cancel := context.WithTimeout(context.Background(), nativeNotificationTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "notify-send", buildNotifySendArgs(title, message, iconPath)...)
+	if err := cmd.Run(); err != nil {
+		cacheDebugLog("desktop notification unavailable: %v", err)
 	}
 }
 
