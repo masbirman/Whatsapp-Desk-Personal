@@ -89,7 +89,7 @@ OWASP's current password storage guidance recommends Argon2id and lists a baseli
 - Lock/unlock, startup lock, minimize-to-tray, and profile switches never clear WebView cookies, localStorage, IndexedDB, or website data.
 - Keep a native recovery route if WebView DOM/CSS fails. Do not provide an unlock bypass through tray, debug bridge, custom CSS, or app reopen.
 
-M3 implementation status: credential setup, verification, recovery, profile policy, and native Windows/GTK prompt code are present. Idle, minimize, startup, manual, and keyboard lock paths are implemented. Tray-trigger wiring is pending the tray integration milestone. Windows/Linux GUI runtime behavior, including recovery and session preservation, has not yet been manually verified. Lock-aware notification redaction is a later milestone and is not implemented yet.
+M3 implementation status: credential setup, verification, recovery, profile policy, and native Windows/GTK prompt code are present. Idle, minimize, startup, manual, and keyboard lock paths are implemented. Ubuntu runtime verification (isolated profile, AT-SPI-driven) passed for: startup lock before WebView navigation, wrong-credential failure dialog, correct-credential unlock (two cycles), fail-closed re-prompt on cancel/close, 12-second idle re-lock, and WebView session reconnection after unlock. Tray-trigger wiring is pending the tray integration milestone. Windows native dialog behavior, minimize trigger, page shortcut, and recovery-code unlock have not yet been manually verified. Lock-aware notification redaction is a later milestone and is not implemented yet.
 
 ## 4. Native Bridge Boundary
 
