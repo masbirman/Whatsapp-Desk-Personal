@@ -95,6 +95,8 @@ Never add a raw PIN/password or recovery-code field. The recovery code is genera
 
 ### NotificationPolicy
 
+Stored under the store's `notifications` key since M4-01 (implemented):
+
 ```text
 NotificationPolicy {
   enabled: bool
@@ -103,14 +105,29 @@ NotificationPolicy {
   focused_behavior: allow | generic | suppress
   background_behavior: allow | generic | suppress
   locked_behavior: generic | suppress   // never allow full content while locked
-  private_chat_rule: policy override
-  group_rule: policy override
-  quiet_hours: { enabled, start_local, end_local, weekdays, timezone_mode }
-  sound: { enabled, mode/platform option }
+  quiet_hours: { enabled, start_local "HH:MM", end_local "HH:MM" }
+  sound: { enabled }
 }
 ```
 
-Resolve and redact before calling the OS. The native driver receives no hidden sender/body value.
+Resolution order: master switch → locked floor (generic-or-suppress only) →
+quiet hours (suppress) → focused/background behavior → per-field sender/body
+redaction. The page proposes a bounded `NotificationEvent { title, body, tag,
+chat_type: unknown|private|group, focused }`; the native driver receives only
+the resolved `NotificationPresentation { title, body, sound, suppressed }`.
+A corrupt stored policy degrades to a content-free policy (generic title, no
+body) instead of leaking content. Private/group rule overrides are reserved
+until the adapter reports a trusted chat type (M5).
+
+Per-profile overrides (`privacy_profile.notification_policy`, implemented as
+`ProfileNotificationOverrides`): `enabled`, `sender_visibility`,
+`body_visibility`, `focused_behavior`, `background_behavior`,
+`locked_behavior`, `quiet_hours_enabled`, `sound_enabled` — all optional;
+omitted fields inherit the base policy. Overrides cannot weaken the locked
+floor; invalid merged values degrade to the content-free policy.
+
+Legacy `settings.notifications_enabled` remains in sync as the initial
+enabled state for stores whose `notifications` key was never configured.
 
 ### Local Pin
 

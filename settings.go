@@ -70,18 +70,25 @@ func saveSettings(s *AppSettings) error {
 	return applicationState.SaveSettings(*s)
 }
 
+// Notification enable/disable lives in the stored notification policy since
+// M4-01; the legacy AppSettings field is kept in sync for older readers.
 func getNotificationsEnabled() bool {
-	return loadSettings().NotificationsEnabled
+	return applicationState.EffectiveNotificationPolicy().Enabled
 }
 
 func setNotificationsEnabled(enabled bool) bool {
-	s, err := applicationState.UpdateSettings(func(current *AppSettings) {
+	if err := applicationState.UpdateNotificationPolicy(func(policy *NotificationPolicy) {
+		policy.Enabled = enabled
+	}); err != nil {
+		return applicationState.EffectiveNotificationPolicy().Enabled
+	}
+	_, settingsErr := applicationState.UpdateSettings(func(current *AppSettings) {
 		current.NotificationsEnabled = enabled
 	})
-	if err != nil {
-		return applicationState.Settings().NotificationsEnabled
+	if settingsErr != nil {
+		cacheDebugLog("legacy notifications_enabled sync failed: %v", settingsErr)
 	}
-	return s.NotificationsEnabled
+	return applicationState.EffectiveNotificationPolicy().Enabled
 }
 
 func saveTheme(theme string) string {

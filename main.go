@@ -217,7 +217,13 @@ func getInitScript(ua string) string {
 				options = options || {};
 				var body = options.body || '';
 				if (notificationsStateReady && notificationsEnabled && window.sendNativeNotification) {
-					window.sendNativeNotification(title, body);
+					// The page only proposes an event; Go decides the presentation.
+					var focused = !!(document.hasFocus && document.hasFocus());
+					var chatType = 'unknown';
+					if (options && typeof options['wa-chat-type'] === 'string') {
+						chatType = options['wa-chat-type'];
+					}
+					window.sendNativeNotification(title, body, String(options.tag || ''), chatType, focused);
 				}
 			}
 

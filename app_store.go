@@ -92,13 +92,14 @@ func newApplicationStore(settings AppSettings) ApplicationStore {
 	now := time.Now().UTC().Format(time.RFC3339Nano)
 	profiles := defaultProfiles(settings.BlurAvatars)
 	lock, _ := json.Marshal(defaultLockConfig())
+	notifications, _ := json.Marshal(defaultNotificationPolicy(settings.NotificationsEnabled))
 	return ApplicationStore{
 		SchemaVersion:  appStoreSchemaVersion,
 		Settings:       normalizeAppSettings(settings),
 		CurrentProfile: "normal",
 		Profiles:       profiles,
 		Lock:           lock,
-		Notifications:  json.RawMessage(`{}`),
+		Notifications:  notifications,
 		Pins:           []json.RawMessage{},
 		Bookmarks:      []json.RawMessage{},
 		Labels:         []json.RawMessage{},

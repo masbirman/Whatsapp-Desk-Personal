@@ -64,7 +64,7 @@ type PrivacyProfile struct {
 	Name                string               `json:"name"`
 	BuiltIn             bool                 `json:"built_in"`
 	Privacy             PrivacyPolicy        `json:"privacy"`
-	NotificationPolicy  map[string]any       `json:"notification_policy,omitempty"`
+	NotificationPolicy  ProfileNotificationOverrides `json:"notification_policy,omitempty"`
 	LockOverrides       *LockPolicyOverrides `json:"lock_overrides,omitempty"`
 	AppearanceOverrides map[string]any       `json:"appearance_overrides,omitempty"`
 	UpdatedAt           string               `json:"updated_at"`
@@ -121,7 +121,7 @@ func defaultProfile(kind ProfileKind, now string, legacyBlurAvatars bool) Privac
 	}
 	return PrivacyProfile{
 		ID: profileID, Kind: kind, Name: name, BuiltIn: builtIn,
-		Privacy: policy, NotificationPolicy: map[string]any{}, UpdatedAt: now,
+		Privacy: policy, NotificationPolicy: ProfileNotificationOverrides{}, UpdatedAt: now,
 	}
 }
 

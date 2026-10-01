@@ -975,13 +975,20 @@ func runApp() {
 	initSystemTrayLinux(iconPath)
 	defer shutdownSystemTrayLinux()
 
-	// Bind native notification bridge
-	_ = w.Bind("sendNativeNotification", func(title, body string) {
-		request, err := newNativeNotificationRequest(title, body)
+	// Bind native notification bridge. The page only proposes an event; the
+	// native policy resolves (and may suppress or genericize) the presentation
+	// before the OS driver is invoked. The driver never sees hidden content.
+	_ = w.Bind("sendNativeNotification", func(title, body, tag, chatType string, focused bool) bool {
+		event, err := newNotificationEvent(title, body, tag, chatType, focused)
 		if err != nil {
-			return
+			return false
 		}
-		go showNativeNotification(request.Title, request.Body, iconPath)
+		presentation := applicationState.ResolveNotificationPresentation(event)
+		if presentation.Suppressed {
+			return false
+		}
+		go showNativeNotification(presentation.Title, presentation.Body, iconPath)
+		return true
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)

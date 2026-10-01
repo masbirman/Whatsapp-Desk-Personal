@@ -43,6 +43,16 @@ type NativeNotificationRequest struct {
 	Body  string
 }
 
+// NotificationEvent is the bounded, page-proposed notification event. It is
+// only a proposal: the native policy decides what (if anything) is shown.
+type NotificationEvent struct {
+	Title    string
+	Body     string
+	Tag      string
+	ChatType string
+	Focused  bool
+}
+
 type WindowSizeRequest struct {
 	Width  int
 	Height int
@@ -128,6 +138,24 @@ func newNativeNotificationRequest(title, body string) (NativeNotificationRequest
 		return NativeNotificationRequest{}, errors.New("notification exceeds bridge limits")
 	}
 	return NativeNotificationRequest{Title: title, Body: body}, nil
+}
+
+func newNotificationEvent(title, body, tag, chatType string, focused bool) (NotificationEvent, error) {
+	if utf8.RuneCountInString(title) > maxBridgeNotificationTitle ||
+		utf8.RuneCountInString(body) > maxBridgeNotificationBody ||
+		len(tag) > maxNotificationTagBytes ||
+		hasControlCharacter(title) || hasControlCharacter(body) || hasControlCharacter(tag) {
+		return NotificationEvent{}, errors.New("notification event exceeds bridge limits")
+	}
+	if !utf8.ValidString(tag) {
+		return NotificationEvent{}, errors.New("invalid notification tag")
+	}
+	switch NotificationChatType(chatType) {
+	case ChatTypeUnknown, ChatTypePrivate, ChatTypeGroup:
+	default:
+		return NotificationEvent{}, errors.New("unsupported notification chat type")
+	}
+	return NotificationEvent{Title: title, Body: body, Tag: tag, ChatType: chatType, Focused: focused}, nil
 }
 
 func newWindowSizeRequest(width, height int) (WindowSizeRequest, error) {

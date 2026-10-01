@@ -437,7 +437,7 @@ func ensureAppIconFile(dir string) string {
 	return iconPath
 }
 
-func showNativeNotification(title, message, iconPath, exePath string) {
+func showNativeNotification(title, message string, sound bool, iconPath, exePath string) {
 	notification := toast.Notification{
 		AppID:               "WhatsApp Desk",
 		Title:               title,
@@ -445,6 +445,11 @@ func showNativeNotification(title, message, iconPath, exePath string) {
 		Icon:                iconPath,
 		ActivationType:      "protocol",
 		ActivationArguments: exePath,
+	}
+	// go-toast leaves the toast silent when Audio is unset; opt into the
+	// default system sound only when the resolved policy allows it.
+	if sound {
+		notification.Audio = toast.Default
 	}
 	_ = notification.Push()
 }
@@ -696,13 +701,20 @@ func runApp() {
 		saveWindowState(userDataDir, hwnd)
 	})
 
-	// Bind native notification bridge
-	_ = w.Bind("sendNativeNotification", func(title, body string) {
-		request, err := newNativeNotificationRequest(title, body)
+	// Bind native notification bridge. The page only proposes an event; the
+	// native policy resolves (and may suppress or genericize) the presentation
+	// before the OS driver is invoked. The driver never sees hidden content.
+	_ = w.Bind("sendNativeNotification", func(title, body, tag, chatType string, focused bool) bool {
+		event, err := newNotificationEvent(title, body, tag, chatType, focused)
 		if err != nil {
-			return
+			return false
 		}
-		go showNativeNotification(request.Title, request.Body, iconFullPath, executablePath)
+		presentation := applicationState.ResolveNotificationPresentation(event)
+		if presentation.Suppressed {
+			return false
+		}
+		go showNativeNotification(presentation.Title, presentation.Body, presentation.Sound, iconFullPath, executablePath)
+		return true
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)

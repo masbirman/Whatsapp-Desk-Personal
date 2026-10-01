@@ -96,12 +96,16 @@ func (c *AppStateController) snapshotLocked() AppStateSnapshot {
 		}
 	}
 	lockConfig, lockErr := decodeLockConfig(c.store.Lock)
+	// A corrupt stored policy fails safe: notifications report off in the
+	// snapshot, while resolution itself degrades to content-free presentation.
+	notificationPolicy, policyErr := decodeNotificationPolicy(c.store.Notifications, c.store.Settings.NotificationsEnabled)
+	notificationsOn := policyErr == nil && notificationPolicy.Enabled
 	return AppStateSnapshot{
 		Revision:        c.revision,
 		CurrentProfile:  c.store.CurrentProfile,
 		CurrentPrivacy:  currentPrivacy,
 		Profiles:        profiles,
-		NotificationsOn: c.store.Settings.NotificationsEnabled,
+		NotificationsOn: notificationsOn,
 		LockEnabled:     lockErr != nil || lockConfig.Enabled || c.forceLocked,
 		Locked:          c.locked || c.forceLocked,
 		Settings:        c.store.Settings,
