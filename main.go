@@ -3803,6 +3803,44 @@ func getInitScript(ua string) string {
 					revealModifier.disabled = !editable;
 					document.getElementById('wa-privacy-copy-custom').disabled = !supported;
 					document.getElementById('wa-privacy-reset').disabled = !supported;
+					var trayStatus = document.getElementById('wa-tray-status');
+					if (trayStatus && window.getTraySettingsNative) {
+						Promise.resolve(window.getTraySettingsNative()).then(function(raw) {
+							var tray = typeof raw === 'string' ? JSON.parse(raw) : raw;
+							if (!tray || !tray.supported) {
+								trayStatus.textContent = 'Tray-hide controls are available on Windows.';
+								return;
+							}
+							trayStatus.textContent = 'Minimize/close to tray keeps the session alive.';
+							var toggles = document.getElementById('wa-tray-toggles');
+							var mkToggle = function(key, label, checked) {
+								var box = document.createElement('label');
+								box.className = 'wa-text-muted';
+								box.style.cssText = 'font-size:11px;display:flex;align-items:center;gap:4px;cursor:pointer;';
+								var input = document.createElement('input');
+								input.type = 'checkbox';
+								input.checked = !!checked;
+								input.setAttribute('aria-label', label);
+								input.onchange = function() {
+									Promise.resolve(window.setTraySettingsNative(JSON.stringify({
+										minimize_to_tray: key === 'minimize' ? input.checked : undefined,
+										close_to_tray: key === 'close' ? input.checked : undefined
+									}))).then(function(next) {
+										var st = typeof next === 'string' ? JSON.parse(next) : next;
+										input.checked = !!(st && st[key === 'minimize' ? 'minimize_to_tray' : 'close_to_tray']);
+									});
+								};
+								box.appendChild(input);
+								box.appendChild(document.createTextNode(label));
+								return box;
+							};
+							toggles.appendChild(mkToggle('minimize', 'Minimize to tray', tray.minimize_to_tray));
+							toggles.appendChild(mkToggle('close', 'Close to tray', tray.close_to_tray));
+						}).catch(function() { trayStatus.textContent = 'Tray status unavailable'; });
+					} else if (trayStatus) {
+						trayStatus.textContent = 'Tray integration not available.';
+					}
+
 					var lockStatus = document.getElementById('wa-lock-status');
 					var lockSupported = !!window.getLockPolicyNative;
 				document.getElementById('wa-lock-manage').disabled = !lockSupported;
@@ -3810,7 +3848,7 @@ func getInitScript(ua string) string {
 				if (!lockSupported) lockStatus.textContent = 'Native app lock is available on Windows and Linux.';
 				else Promise.resolve(window.getLockPolicyNative()).then(function(raw) {
 						var lock = typeof raw === 'string' ? JSON.parse(raw) : raw;
-						lockStatus.textContent = lock.enabled ? 'Enabled · ' + (lock.idle_timeout_seconds ? 'idle ' + lock.idle_timeout_seconds + 's' : 'manual') + (lock.lock_on_minimize ? ' · minimize' : '') + (lock.lock_on_startup ? ' · startup' : '') : 'Disabled';
+						lockStatus.textContent = lock.enabled ? 'Enabled · ' + (lock.idle_timeout_seconds ? 'idle ' + lock.idle_timeout_seconds + 's' : 'manual') + (lock.lock_on_minimize ? ' · minimize' : '') + (lock.lock_on_tray ? ' · tray' : '') + (lock.lock_on_startup ? ' · startup' : '') : 'Disabled';
 					}).catch(function() { lockStatus.textContent = 'Lock status unavailable'; });
 				}
 				if (profileSelect) profileSelect.onchange = function() {

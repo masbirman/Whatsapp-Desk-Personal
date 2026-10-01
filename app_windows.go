@@ -756,6 +756,8 @@ func runApp() {
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
+	_ = w.Bind("getTraySettingsNative", getTraySettingsJSON)
+	_ = w.Bind("setTraySettingsNative", setTraySettingsJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		// Note: do NOT call w.Suspend() here. The webview2 vendor library already
@@ -960,7 +962,10 @@ func runApp() {
 		Open: func() {
 			visible, _, _ := procIsWindowVisible.Call(hwnd)
 			if visible == 0 {
-				return // locked or explicitly hidden: the lock prompt is the only way back
+				// Locked or explicitly hidden: the lock prompt is the only
+				// way back in; tray Open must never reveal the WebView.
+				requestNativeAppLock(hwnd)
+				return
 			}
 			procShowNormal.Call(hwnd, swRestore)
 			procSetFgWindow.Call(hwnd)

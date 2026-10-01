@@ -1269,7 +1269,13 @@ func runApp() {
 
 	// Tray menu actions (M4-06). Menu events arrive on the GTK main loop, so
 	// page-touching closures may call w.Eval directly.
-	linuxTrayActions.Open = func() { C.tray_show_window() }
+	linuxTrayActions.Open = func() {
+		if applicationState.Snapshot().Locked {
+			requestNativeAppLock(uintptr(w.Window()))
+			return
+		}
+		C.tray_show_window()
+	}
 	linuxTrayActions.Privacy = func() {
 		w.Eval("if (window.togglePrivacyMode) window.togglePrivacyMode();")
 	}
@@ -1311,6 +1317,8 @@ func runApp() {
 	})
 	_ = w.Bind("getNotificationsEnabledNative", getNotificationsEnabled)
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
+	_ = w.Bind("getTraySettingsNative", getTraySettingsJSON)
+	_ = w.Bind("setTraySettingsNative", setTraySettingsJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		debug.FreeOSMemory()

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -93,6 +94,38 @@ func setNotificationsEnabled(enabled bool) bool {
 		cacheDebugLog("legacy notifications_enabled sync failed: %v", settingsErr)
 	}
 	return applicationState.EffectiveNotificationPolicy().Enabled
+}
+
+// Tray settings (M4-07): the Control Center reads the real stored state and
+// toggles persist it. "supported" reports whether the running platform has
+// tray-hide behavior at all, so the UI can show the actual capabilities.
+func getTraySettingsJSON() string {
+	s := applicationState.Settings()
+	return fmt.Sprintf(`{"supported":%t,"minimize_to_tray":%t,"close_to_tray":%t}`,
+		runtime.GOOS == "windows", s.MinimizeToTray, s.CloseToTray)
+}
+
+func setTraySettingsJSON(raw string) string {
+	var update struct {
+		Minimize *bool `json:"minimize_to_tray"`
+		Close    *bool `json:"close_to_tray"`
+	}
+	if err := json.Unmarshal([]byte(raw), &update); err != nil {
+		return getTraySettingsJSON()
+	}
+	if update.Minimize != nil || update.Close != nil {
+		if _, err := applicationState.UpdateSettings(func(current *AppSettings) {
+			if update.Minimize != nil {
+				current.MinimizeToTray = *update.Minimize
+			}
+			if update.Close != nil {
+				current.CloseToTray = *update.Close
+			}
+		}); err != nil {
+			cacheDebugLog("tray settings update failed: %v", err)
+		}
+	}
+	return getTraySettingsJSON()
 }
 
 func saveTheme(theme string) string {

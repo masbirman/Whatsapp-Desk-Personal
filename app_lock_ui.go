@@ -225,10 +225,12 @@ func configureNativeLockTriggers(owner uintptr, config LockConfig) {
 		return
 	}
 	lockOnMinimize := nativeAskChoice(owner, "Lock triggers", "Lock when the app window is minimized?", "Yes", "No") == 1
+	lockOnTray := nativeAskChoice(owner, "Lock triggers", "Lock when the app is minimized or closed to the tray?", "Yes", "No") == 1
 	lockOnStartup := nativeAskChoice(owner, "Lock triggers", "Lock when WhatsApp Desk starts?", "Yes", "No") == 1
 	if err := applicationState.UpdateLockPolicy(func(next *LockConfig) {
 		next.IdleTimeoutSecond = seconds
 		next.LockOnMinimize = lockOnMinimize
+		next.LockOnTray = lockOnTray
 		next.LockOnStartup = lockOnStartup
 	}); err != nil {
 		nativeInform(owner, "Lock triggers", "Could not save lock trigger settings.")

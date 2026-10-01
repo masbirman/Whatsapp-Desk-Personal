@@ -490,6 +490,13 @@ func stopWindowsTray() {
 
 // --- Main window minimize/close-to-tray hook -------------------------------
 
+// lockOnTrayConfigured reports whether the effective lock policy asks for a
+// lock whenever the app is sent to the tray.
+func lockOnTrayConfigured() bool {
+	config, err := applicationState.EffectiveLockConfig()
+	return err == nil && config.Enabled && config.LockOnTray
+}
+
 // mainWindowTrayWndProc intercepts minimize and close for tray behavior.
 // Everything else is forwarded to the original webview window procedure.
 func mainWindowTrayWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
@@ -497,11 +504,17 @@ func mainWindowTrayWndProc(hwnd, msg, wParam, lParam uintptr) uintptr {
 	switch msg {
 	case wmSize:
 		if wParam == sizeMinimized && minimizeToTrayEnabled() {
+			if lockOnTrayConfigured() {
+				applicationState.MarkLocked()
+			}
 			procShowNormal.Call(hwnd, swHide)
 			return 0
 		}
 	case wmClose:
 		if closeToTrayEnabled() && !trayQuitRequested.Load() {
+			if lockOnTrayConfigured() {
+				applicationState.MarkLocked()
+			}
 			procShowNormal.Call(hwnd, swHide)
 			return 0
 		}
