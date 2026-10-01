@@ -118,6 +118,7 @@ type ITaskbarList3Vtbl struct {
 	SetTabOrder          uintptr
 	SetTabActivate       uintptr
 	SetTabProperties     uintptr
+	SetOverlayIcon       uintptr
 }
 
 func (t *ITaskbarList3) HrInit() error {
@@ -138,6 +139,18 @@ func (t *ITaskbarList3) SetProgressValue(hwnd uintptr, completed, total uint64) 
 
 func (t *ITaskbarList3) SetProgressState(hwnd uintptr, flags uint32) error {
 	ret, _, _ := syscall.Syscall(t.vtbl.SetProgressState, 3, uintptr(unsafe.Pointer(t)), hwnd, uintptr(flags))
+	if ret != 0 {
+		return syscall.Errno(ret)
+	}
+	return nil
+}
+
+func (t *ITaskbarList3) SetOverlayIcon(hwnd uintptr, hicon uintptr, description string) error {
+	descPtr, err := syscall.UTF16PtrFromString(description)
+	if err != nil {
+		return err
+	}
+	ret, _, _ := syscall.Syscall6(t.vtbl.SetOverlayIcon, 4, uintptr(unsafe.Pointer(t)), hwnd, hicon, uintptr(unsafe.Pointer(descPtr)), 0, 0)
 	if ret != 0 {
 		return syscall.Errno(ret)
 	}
@@ -175,18 +188,36 @@ func initTaskbarList() error {
 	return taskbarList.HrInit()
 }
 
+// taskbarOverlayCount renders a numeric unread overlay on the taskbar icon
+// via ITaskbarList3.SetOverlayIcon. The count is capped for display and any
+// failure falls back to the progress-bar representation.
+func setTaskbarOverlayCount(hwnd uintptr, count int) error {
+	hicon, err := createUnreadOverlayIcon(count)
+	if err != nil {
+		return err
+	}
+	return taskbarList.SetOverlayIcon(hwnd, hicon, "unread messages")
+}
+
 func setTaskbarBadge(hwnd uintptr, count int) error {
 	if err := initTaskbarList(); err != nil {
 		return err
 	}
 	if count <= 0 {
+		// Clear both the overlay and the progress indicator.
+		_ = taskbarList.SetOverlayIcon(hwnd, 0, "")
 		return taskbarList.SetProgressState(hwnd, TBF_NOPROGRESS)
 	}
-	if count > 99 {
-		count = 99
+	if err := setTaskbarOverlayCount(hwnd, count); err == nil {
+		// Overlay replaces the progress representation while it is active.
+		return taskbarList.SetProgressState(hwnd, TBF_NOPROGRESS)
 	}
-	// Set progress value to show count
-	err := taskbarList.SetProgressValue(hwnd, uint64(count), 100)
+	// Fallback: progress-bar representation (documented in TESTING.md).
+	display := count
+	if display > 99 {
+		display = 99
+	}
+	err := taskbarList.SetProgressValue(hwnd, uint64(display), 100)
 	if err != nil {
 		return err
 	}
