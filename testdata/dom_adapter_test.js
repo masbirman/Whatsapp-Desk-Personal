@@ -22,6 +22,7 @@ function install(queryMap) {
 function element(name, selectorMatches = [], attrs = {}, children = {}) {
   return {
     name,
+    tagName: (attrs && attrs.__tag) || 'DIV',
     nodeType: 1,
     parentElement: null,
     matches(selector) { return selectorMatches.includes(selector); },
@@ -251,6 +252,40 @@ function runIdentity() {
   const msgCollisionAPI = install({ '#main': [msgCollisionMain] }).api;
   assert.equal(msgCollisionAPI.messageNodeByKey(latestAPI.messageIdentity(newMsg).key).status, 'ambiguous');
   assert.equal(latestAPI.messageNodeByKey('msg:0000000000000000').status, 'missing');
+
+  // Story viewer detection (M6-01): only the currently open viewer is
+  // inspected; missing, ambiguous, and unsupported-media outcomes are all
+  // explicit so callers can disable actions instead of guessing.
+  const statusSelectors = install({}).api.selectors('statusViewer');
+  const mediaSelectors = install({}).api.selectors('statusViewerMedia');
+  const noViewerAPI = install({}).api;
+  assert.equal(noViewerAPI.openStoryViewer().status, 'missing');
+
+  const videoEl = element('status video', [], { __tag: 'VIDEO' });
+  const viewerNode = element('status viewer', [statusSelectors[0]], {}, {
+    [mediaSelectors[0]]: [videoEl],
+  });
+  const videoAPI = install({ [statusSelectors[0]]: [viewerNode] }).api;
+  const videoResult = videoAPI.openStoryViewer();
+  assert.equal(videoResult.status, 'found');
+  assert.equal(videoResult.mediaKind, 'video');
+
+  const imgEl = element('status image', [], { __tag: 'IMG' });
+  const imgViewer = element('image viewer', [statusSelectors[0]], {}, {
+    [mediaSelectors[2]]: [imgEl],
+  });
+  const imgAPI = install({ [statusSelectors[0]]: [imgViewer] }).api;
+  assert.equal(imgAPI.openStoryViewer().mediaKind, 'image');
+
+  const textOnlyViewer = element('text viewer', [statusSelectors[0]]);
+  const textAPI = install({ [statusSelectors[0]]: [textOnlyViewer] }).api;
+  const textResult = textAPI.openStoryViewer();
+  assert.equal(textResult.status, 'found');
+  assert.equal(textResult.mediaKind, 'unknown', 'unsupported media must be explicit');
+
+  const secondViewer = element('second viewer', [statusSelectors[0]]);
+  const ambiguousViewerAPI = install({ [statusSelectors[0]]: [viewerNode, secondViewer] }).api;
+  assert.equal(ambiguousViewerAPI.openStoryViewer().status, 'ambiguous');
 
   console.log('PASS: chat/message identity keys are opaque, confidence-tagged, deterministic, and fail closed on ambiguity');
 }

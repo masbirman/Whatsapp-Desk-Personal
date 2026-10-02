@@ -218,6 +218,17 @@
 		'.message-in',
 		'.message-out'
 	],
+	statusViewer: [
+		'[data-testid*="status-viewer"]',
+		'[data-animate-status-v3-modal="true"]',
+		'[data-testid="status-v3"]',
+		'[role="dialog"][aria-label*="Status" i]',
+		'[role="dialog"][aria-label*="status" i][data-testid*="status"]'
+	],
+	statusViewerMedia: [
+		'img[src^="blob:"]', 'video[src^="blob:"]',
+		'img', 'video'
+	],
 	conversationTitle: [
 		'#main header [data-testid*="conversation-info-header-chat-title"]',
 		'#main header span[title]'
@@ -491,6 +502,25 @@
 		return identityResult('missing', '', '', '');
 	}
 
+	// Story/status viewer detection (M6-01). Only the viewer the user has
+	// open is inspected; there is deliberately no status list discovery and
+	// no background scanning. An explicit unsupported result lets callers
+	// disable their actions instead of guessing.
+	function openStoryViewer() {
+		var viewer = resolveOne('statusViewer');
+		if (viewer.status !== 'found' || !viewer.node) {
+			return { status: viewer.status === 'ambiguous' ? 'ambiguous' : 'missing', mediaKind: '', version: ADAPTER_VERSION };
+		}
+		var media = resolveAll('statusViewerMedia', viewer.node).nodes;
+		for (var i = 0; i < media.length; i++) {
+			var kind = media[i].tagName === 'VIDEO' ? 'video' : (media[i].tagName === 'IMG' ? 'image' : '');
+			if (kind) {
+				return { status: 'found', mediaKind: kind, node: media[i], version: ADAPTER_VERSION };
+			}
+		}
+		return { status: 'found', mediaKind: 'unknown', node: null, version: ADAPTER_VERSION };
+	}
+
 	global.waDOM = Object.freeze({
 		version: ADAPTER_VERSION,
 		selectors: selectors,
@@ -506,6 +536,7 @@
 		messageIdentity: messageIdentity,
 		activeChatIdentity: activeChatIdentity,
 		latestMessageIdentity: latestMessageIdentity,
-		messageNodeByKey: messageNodeByKey
+		messageNodeByKey: messageNodeByKey,
+		openStoryViewer: openStoryViewer
 	});
 })(window, document);

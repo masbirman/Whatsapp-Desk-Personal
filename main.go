@@ -4043,6 +4043,16 @@ func getInitScript(ua string) string {
 					renderLabels();
 					renderNotes();
 
+					var storySave = document.getElementById('wa-story-save');
+					if (storySave) storySave.onclick = function() {
+						storySave.disabled = true;
+						window.waSaveCurrentStory().then(function(result) {
+							storySave.disabled = false;
+							if (result.ok) window.showFloatingToast && window.showFloatingToast('💾 Saved to downloads');
+							else window.showFloatingToast && window.showFloatingToast('📖 ' + (result.error || 'Could not save this story'));
+						});
+					};
+
 					var trayStatus = document.getElementById('wa-tray-status');
 					if (trayStatus && window.getTraySettingsNative) {
 						Promise.resolve(window.getTraySettingsNative()).then(function(raw) {

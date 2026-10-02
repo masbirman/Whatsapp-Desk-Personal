@@ -780,6 +780,7 @@ func runApp() {
 	_ = w.Bind("noteUpdateNative", noteUpdateJSON)
 	_ = w.Bind("noteRemoveNative", noteRemoveJSON)
 	_ = w.Bind("noteClearNative", noteClearJSON)
+	_ = w.Bind("storySaveNative", storySaveJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		// Note: do NOT call w.Suspend() here. The webview2 vendor library already

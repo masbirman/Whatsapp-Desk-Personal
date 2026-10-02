@@ -118,6 +118,10 @@ func nowStamp() string {
 	return time.Now().UTC().Format(time.RFC3339Nano)
 }
 
+func nowStampFileSafe() string {
+	return time.Now().UTC().Format("20060102-150405")
+}
+
 func normalizeMessageKind(kind string) string {
 	switch kind {
 	case "text", "image", "video", "audio", "document", "sticker":

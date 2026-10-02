@@ -1341,6 +1341,7 @@ func runApp() {
 	_ = w.Bind("noteUpdateNative", noteUpdateJSON)
 	_ = w.Bind("noteRemoveNative", noteRemoveJSON)
 	_ = w.Bind("noteClearNative", noteClearJSON)
+	_ = w.Bind("storySaveNative", storySaveJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		debug.FreeOSMemory()
