@@ -462,6 +462,35 @@
 		};
 	}
 
+	function messageNodeByKey(key) {
+		if (!key || typeof key !== 'string') return identityResult('missing', '', '', '');
+		var root = resolveFirst('conversationRoot');
+		if (!root.node) return identityResult('missing', '', '', '');
+		var containers = resolveCandidatesInDOMOrder('messageWrapper', root.node);
+		var matches = [];
+		for (var i = 0; i < containers.length; i++) {
+			var identity = messageIdentity(containers[i].node);
+			if (identity.status === 'found' && identity.key === key) matches.push(containers[i].node);
+		}
+		if (!matches.length) return identityResult('missing', '', '', '');
+		if (matches.length > 1) return identityResult('ambiguous', '', '', '');
+		return identityResult('found', key, 'data-id', 'high');
+	}
+
+	// Identity of the last identifiable message in the open conversation:
+	// deterministic (last in DOM order with a resolvable data-id) and never
+	// guesses when no message carries an identity.
+	function latestMessageIdentity() {
+		var root = resolveFirst('conversationRoot');
+		if (!root.node) return identityResult('missing', '', '', '');
+		var containers = resolveCandidatesInDOMOrder('messageWrapper', root.node);
+		for (var i = containers.length - 1; i >= 0; i--) {
+			var identity = messageIdentity(containers[i].node);
+			if (identity.status === 'found') return identity;
+		}
+		return identityResult('missing', '', '', '');
+	}
+
 	global.waDOM = Object.freeze({
 		version: ADAPTER_VERSION,
 		selectors: selectors,
@@ -475,6 +504,8 @@
 		chatRowIdentity: chatRowIdentity,
 		chatRowByKey: chatRowByKey,
 		messageIdentity: messageIdentity,
-		activeChatIdentity: activeChatIdentity
+		activeChatIdentity: activeChatIdentity,
+		latestMessageIdentity: latestMessageIdentity,
+		messageNodeByKey: messageNodeByKey
 	});
 })(window, document);

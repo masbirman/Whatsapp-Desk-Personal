@@ -765,6 +765,10 @@ func runApp() {
 	_ = w.Bind("pinReorderNative", pinReorderJSON)
 	_ = w.Bind("pinRemoveNative", pinRemoveJSON)
 	_ = w.Bind("pinClearNative", pinClearJSON)
+	_ = w.Bind("bookmarkAddNative", bookmarkAddJSON)
+	_ = w.Bind("bookmarkListNative", bookmarkListJSON)
+	_ = w.Bind("bookmarkRemoveNative", bookmarkRemoveJSON)
+	_ = w.Bind("bookmarkClearNative", bookmarkClearJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		// Note: do NOT call w.Suspend() here. The webview2 vendor library already

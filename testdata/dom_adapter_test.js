@@ -220,6 +220,38 @@ function runIdentity() {
   assert.equal(noChatAPI.activeChatIdentity().status, 'missing');
   assert.equal(noChatAPI.activeChatIdentity().key, '');
 
+  // Latest message identity: the last identifiable message in DOM order
+  // wins; containers without identity are skipped, and absence fails closed.
+  const oldMsg = element('old message', [], { 'data-id': 'true_chat_111' });
+  const newMsg = element('new message', [], { 'data-id': 'true_chat_222' });
+  const unidentifiable = element('system bubble');
+  const msgWrapperJoined = install({}).api.selectors('messageWrapper').join(', ');
+  const mainForMessages = element('conversation', ['#main'], {}, {
+    [msgWrapperJoined]: [oldMsg, newMsg, unidentifiable],
+  });
+  const latestAPI = install({ '#main': [mainForMessages] }).api;
+  const latest = latestAPI.latestMessageIdentity();
+  assert.equal(latest.status, 'found');
+  const expectedNew = latestAPI.messageIdentity(newMsg);
+  assert.equal(latest.key, expectedNew.key, 'the last identifiable message must win');
+  const emptyMain = element('empty conversation', ['#main']);
+  const emptyAPI = install({ '#main': [emptyMain] }).api;
+  assert.equal(emptyAPI.latestMessageIdentity().status, 'missing');
+  const noMainAPI = install({}).api;
+  assert.equal(noMainAPI.latestMessageIdentity().status, 'missing');
+
+  // messageNodeByKey: found for a loaded message, ambiguous on collision,
+  // missing when the message is not in the visible conversation.
+  const foundMsg = latestAPI.messageNodeByKey(latestAPI.messageIdentity(newMsg).key);
+  assert.equal(foundMsg.status, 'found');
+  const collisionMsg = element('duplicate message', [], { 'data-id': 'true_chat_222' });
+  const msgCollisionMain = element('conversation', ['#main'], {}, {
+    [msgWrapperJoined]: [newMsg, collisionMsg],
+  });
+  const msgCollisionAPI = install({ '#main': [msgCollisionMain] }).api;
+  assert.equal(msgCollisionAPI.messageNodeByKey(latestAPI.messageIdentity(newMsg).key).status, 'ambiguous');
+  assert.equal(latestAPI.messageNodeByKey('msg:0000000000000000').status, 'missing');
+
   console.log('PASS: chat/message identity keys are opaque, confidence-tagged, deterministic, and fail closed on ambiguity');
 }
 

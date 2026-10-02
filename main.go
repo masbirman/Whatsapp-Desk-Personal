@@ -3885,6 +3885,59 @@ func getInitScript(ua string) string {
 					};
 					renderPins();
 
+					// Local bookmarks (M5-03): render from the native store; the
+					// list never contains message bodies, only identity metadata.
+					var bookmarksList = document.getElementById('wa-bookmarks-list');
+					var bookmarksStatus = document.getElementById('wa-bookmarks-status');
+					var renderBookmarks = function() {
+						if (!bookmarksList) return;
+						window.waBookmarkList().then(function(envelope) {
+							bookmarksList.innerHTML = '';
+							var bookmarks = (envelope && envelope.ok && envelope.bookmarks) ? envelope.bookmarks : [];
+							bookmarksStatus.textContent = bookmarks.length === 0 ? 'No bookmarks yet. Open a chat, then bookmark its latest message.' : bookmarks.length + ' bookmark(s), message bodies are not stored.';
+							bookmarks.forEach(function(bookmark) {
+								var row = document.createElement('div');
+								row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;';
+								var label = document.createElement('span');
+								label.className = 'wa-text-primary';
+								label.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+								var when = bookmark.message_time ? ' · ' + bookmark.message_time : '';
+								label.textContent = (bookmark.chat_label || 'Bookmarked message') + when;
+								label.title = bookmark.confidence === 'high' ? 'High-confidence identity' : 'Medium-confidence identity (title-based)';
+								var mkBtn = function(text, title, handler) {
+									var button = document.createElement('button');
+									button.className = 'wa-card-btn';
+									button.style.cssText = 'padding:2px 6px;border-radius:5px;font-size:10px;cursor:pointer;border-width:1px;border-style:solid;flex-shrink:0;';
+									button.textContent = text;
+									button.title = title;
+									button.onclick = handler;
+									return button;
+								};
+								row.appendChild(label);
+								row.appendChild(mkBtn('Open', 'Open this bookmarked message', function() {
+									window.waBookmarkOpen(bookmark).then(function(result) {
+										if (!result.ok) window.showFloatingToast && window.showFloatingToast('🔖 ' + result.error);
+										else if (result.warning) window.showFloatingToast && window.showFloatingToast('🔖 ' + result.warning);
+									});
+								}));
+								row.appendChild(mkBtn('✕', 'Remove bookmark', function() { window.waBookmarkRemove(bookmark.ID).then(renderBookmarks); }));
+								bookmarksList.appendChild(row);
+							});
+						}).catch(function() { bookmarksStatus.textContent = 'Bookmarks unavailable'; });
+					};
+					var bookmarkAdd = document.getElementById('wa-bookmark-add');
+					if (bookmarkAdd) bookmarkAdd.onclick = function() {
+						window.waBookmarkLatest().then(function(result) {
+							if (result.ok) renderBookmarks();
+							else window.showFloatingToast && window.showFloatingToast('🔖 ' + (result.error || 'Could not bookmark this message'));
+						});
+					};
+					var bookmarkClear = document.getElementById('wa-bookmark-clear');
+					if (bookmarkClear) bookmarkClear.onclick = function() {
+						window.waBookmarkClear().then(renderBookmarks);
+					};
+					renderBookmarks();
+
 					var trayStatus = document.getElementById('wa-tray-status');
 					if (trayStatus && window.getTraySettingsNative) {
 						Promise.resolve(window.getTraySettingsNative()).then(function(raw) {

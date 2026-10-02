@@ -376,6 +376,75 @@ func removeFromCollection[T identified](c *AppStateController, id string, event 
 	return err
 }
 
+func (c *AppStateController) ListBookmarks() ([]BookmarkRecord, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(bookmarks, func(i, j int) bool { return bookmarks[i].CreatedAt > bookmarks[j].CreatedAt })
+	return bookmarks, nil
+}
+
+func (c *AppStateController) AddBookmark(bookmark BookmarkRecord) (BookmarkRecord, error) {
+	if err := validateIdentityFields(bookmark.ChatKey, bookmark.IdentityKind, bookmark.AdapterVersion, bookmark.Confidence); err != nil {
+		return BookmarkRecord{}, err
+	}
+	if len(bookmark.MessageKey) == 0 || len(bookmark.MessageKey) > maxIdentityKeyBytes {
+		return BookmarkRecord{}, errors.New("a bookmark requires a bounded message key")
+	}
+	// Message bodies are never copied; excerpts are a future explicit
+	// opt-in and are rejected outright in this milestone.
+	if bookmark.Excerpt != "" {
+		return BookmarkRecord{}, errors.New("message excerpts are not supported yet")
+	}
+	bookmark.MessageKind = normalizeMessageKind(bookmark.MessageKind)
+	if len(bookmark.ChatLabel) > maxDisplayLabelBytes {
+		return BookmarkRecord{}, errors.New("bookmark chat label exceeds the supported length")
+	}
+	if len(bookmark.MessageTime) > 64 {
+		return BookmarkRecord{}, errors.New("bookmark timestamp exceeds the supported length")
+	}
+	bookmark.ChatLabel = strings.TrimSpace(bookmark.ChatLabel)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+	if err != nil {
+		return BookmarkRecord{}, err
+	}
+	for _, existing := range bookmarks {
+		if existing.ChatKey == bookmark.ChatKey && existing.MessageKey == bookmark.MessageKey {
+			return BookmarkRecord{}, errors.New("this message is already bookmarked")
+		}
+	}
+	id, err := newRecordID()
+	if err != nil {
+		return BookmarkRecord{}, err
+	}
+	bookmark.ID = id
+	bookmark.LabelIDs = []string{}
+	bookmark.CreatedAt = nowStamp()
+	bookmark.UpdatedAt = bookmark.CreatedAt
+	bookmarks = append(bookmarks, bookmark)
+	if _, err := saveCollection(c, c.store.Bookmarks, bookmarks, AppEventBookmarksChanged); err != nil {
+		return BookmarkRecord{}, err
+	}
+	return bookmark, nil
+}
+
+func (c *AppStateController) RemoveBookmark(id string) error {
+	return removeFromCollection(c, id, AppEventBookmarksChanged,
+		func() []json.RawMessage { return c.store.Bookmarks },
+		func(raw []json.RawMessage) ([]BookmarkRecord, error) { return decodeCollection[BookmarkRecord](raw) })
+}
+
+func (c *AppStateController) ClearBookmarks() error {
+	return c.clearCollection(AppEventBookmarksChanged, func() []json.RawMessage { return c.store.Bookmarks })
+}
+
 func (c *AppStateController) clearCollection(event AppEventKind, load func() []json.RawMessage) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -473,4 +542,58 @@ func pinClearJSON() string {
 		return pinFailure(err)
 	}
 	return pinListJSON()
+}
+
+func bookmarkEnvelopeStruct(ok bool, bookmarks []BookmarkRecord, errValue error) string {
+	if errValue != nil {
+		data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": errValue.Error()})
+		return string(data)
+	}
+	data, marshalErr := json.Marshal(map[string]interface{}{"ok": true, "bookmarks": bookmarks})
+	if marshalErr != nil {
+		data, _ = json.Marshal(map[string]interface{}{"ok": false, "error": "bookmarks could not be encoded"})
+	}
+	return string(data)
+}
+
+func bookmarkFailure(err error) string {
+	data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": err.Error()})
+	return string(data)
+}
+
+func bookmarkAddJSON(raw string) string {
+	var request BookmarkRecord
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return bookmarkFailure(errors.New("invalid bookmark request"))
+	}
+	bookmark, err := applicationState.AddBookmark(request)
+	if err != nil {
+		return bookmarkFailure(err)
+	}
+	return bookmarkEnvelopeStruct(true, []BookmarkRecord{bookmark}, nil)
+}
+
+func bookmarkListJSON() string {
+	bookmarks, err := applicationState.ListBookmarks()
+	if err != nil {
+		return bookmarkFailure(err)
+	}
+	return bookmarkEnvelopeStruct(true, bookmarks, nil)
+}
+
+func bookmarkRemoveJSON(id string) string {
+	if len(id) != recordIDBytes*2 {
+		return bookmarkFailure(errors.New("invalid bookmark id"))
+	}
+	if err := applicationState.RemoveBookmark(id); err != nil {
+		return bookmarkFailure(err)
+	}
+	return bookmarkListJSON()
+}
+
+func bookmarkClearJSON() string {
+	if err := applicationState.ClearBookmarks(); err != nil {
+		return bookmarkFailure(err)
+	}
+	return bookmarkListJSON()
 }
