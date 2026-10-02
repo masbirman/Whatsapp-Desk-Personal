@@ -4043,6 +4043,72 @@ func getInitScript(ua string) string {
 					renderLabels();
 					renderNotes();
 
+					// Appearance card (M6-03/M6-04): reads the stored state and
+					// persists through Go-side validation; malformed CSS is
+					// rejected and never replaces the last-known-good copy.
+					var appearanceState = null;
+					var syncAppearanceInputs = function() {
+						var set = function(id, prop) { var el = document.getElementById(id); if (el && appearanceState) el.checked = !!appearanceState[prop]; };
+						set('wa-appearance-compact', 'compact_mode');
+						set('wa-appearance-hide-unread', 'hide_unread_badges');
+						set('wa-appearance-hide-archived', 'hide_archived_row');
+						var density = document.getElementById('wa-appearance-density');
+						if (density && appearanceState) density.value = appearanceState.density || 'comfortable';
+						var scale = document.getElementById('wa-appearance-scale');
+						if (scale && appearanceState) scale.value = String(appearanceState.scale_percent || 100);
+						var cssText = document.getElementById('wa-css-text');
+						if (cssText && appearanceState) cssText.value = appearanceState.custom_css || '';
+						var cssEnabled = document.getElementById('wa-css-enabled');
+						if (cssEnabled && appearanceState) cssEnabled.checked = !!appearanceState.css_enabled;
+					};
+					if (window.getAppearanceNative) {
+						Promise.resolve(window.getAppearanceNative()).then(function(raw) {
+							appearanceState = typeof raw === 'string' ? JSON.parse(raw) : raw;
+							if (appearanceState && appearanceState.appearance) appearanceState = appearanceState.appearance;
+							syncAppearanceInputs();
+						}).catch(function() {});
+					}
+					var appearanceSave = document.getElementById('wa-appearance-save');
+					if (appearanceSave) appearanceSave.onclick = function() {
+						var next = {};
+						var bag = appearanceState || {};
+						for (var key in bag) { if (Object.prototype.hasOwnProperty.call(bag, key)) next[key] = bag[key]; }
+						next.compact_mode = document.getElementById('wa-appearance-compact').checked;
+						next.hide_unread_badges = document.getElementById('wa-appearance-hide-unread').checked;
+						next.hide_archived_row = document.getElementById('wa-appearance-hide-archived').checked;
+						next.density = document.getElementById('wa-appearance-density').value;
+						next.scale_percent = parseInt(document.getElementById('wa-appearance-scale').value, 10) || 100;
+						next.custom_css = document.getElementById('wa-css-text').value;
+						next.css_enabled = document.getElementById('wa-css-enabled').checked;
+						Promise.resolve(window.setAppearanceNative(JSON.stringify(next))).then(function(raw) {
+							var result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+							if (result && result.ok) {
+								appearanceState = result.appearance;
+								syncAppearanceInputs();
+								window.waAppearanceApply(result);
+								window.showFloatingToast && window.showFloatingToast('🎨 Appearance saved');
+							} else {
+								syncAppearanceInputs();
+								window.showFloatingToast && window.showFloatingToast('🎨 ' + ((result && result.error) || 'Invalid appearance change; previous values restored'));
+							}
+						});
+					};
+					var appearanceReset = document.getElementById('wa-appearance-reset');
+					if (appearanceReset) appearanceReset.onclick = function() {
+						var reset = { compact_mode: false, density: 'comfortable', scale_percent: 100, hide_unread_badges: false, hide_archived_row: false, custom_css: (appearanceState && appearanceState.last_known_good_css) || '', css_enabled: false };
+						Promise.resolve(window.setAppearanceNative(JSON.stringify(reset))).then(function(raw) {
+							var result = typeof raw === 'string' ? JSON.parse(raw) : raw;
+							if (result && result.ok) {
+								appearanceState = result.appearance;
+								syncAppearanceInputs();
+								window.waAppearanceApply(result);
+								window.showFloatingToast && window.showFloatingToast('🎨 Appearance reset');
+							}
+						});
+					};
+					var cssDisable = document.getElementById('wa-css-disable');
+					if (cssDisable) cssDisable.onclick = function() { window.waDisableCustomCSS().then(function() { if (window.getAppearanceNative) { Promise.resolve(window.getAppearanceNative()).then(function(raw) { appearanceState = typeof raw === 'string' ? JSON.parse(raw) : raw; if (appearanceState && appearanceState.appearance) appearanceState = appearanceState.appearance; syncAppearanceInputs(); }); } }); };
+
 					var storySave = document.getElementById('wa-story-save');
 					if (storySave) storySave.onclick = function() {
 						storySave.disabled = true;
