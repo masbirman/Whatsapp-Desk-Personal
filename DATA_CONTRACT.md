@@ -183,6 +183,16 @@ Do not copy complete message or conversation bodies. Unsupported/changed identit
 
 Include compact mode, density enum, scale percent, hide-section preferences, custom CSS text, enabled flag, and hash/version of last-known-good CSS. Keep last-known-good CSS recoverable if new CSS fails validation. Exclude app lock/control center styling from custom CSS scope.
 
+Implemented in M6: `appearance` stores compact_mode, density
+(comfortable|cozy|compact), scale_percent (80-130), hide_unread_badges,
+hide_archived_row, custom_css, css_enabled, and last_known_good_css/hash.
+Validation rejects @import, every url() form, script/style breakout
+constructs, unbalanced braces, and CSS above 64 KiB; the last-known-good
+copy only ever tracks CSS that passed validation. Recovery paths: the
+Ctrl+Shift+X page shortcut, the Control Center disable/reset buttons,
+and reset-to-defaults — the native lock dialog is outside any CSS
+surface by construction.
+
 ## 4. Migration
 
 Migration from current `settings.json`:

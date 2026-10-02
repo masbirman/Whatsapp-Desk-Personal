@@ -139,6 +139,13 @@ Live DOM validation is required for any feature that depends on a current chat r
 - **VERIFIED — Store CRUD:** pin lifecycle across controller reloads, immutable identity fields through updates, full-order reorder validation, duplicate rejection, label cascade detach, note bounds and single-anchor rules.
 - **NOT RUNTIME VERIFIED:** all Control Center productivity cards against live WhatsApp Web (pin from a real chat, opening rows, bookmarking a real message), since a live logged-in session was not used. Identity keys are hash-based, so adapter changes are expected to surface as unresolved pins/bookmarks by design.
 
-## 11. Release Validation Record
+## 11. Validation Record — Milestone 6
+
+- **VERIFIED — Go tests, Linux build, Windows x64 cross-build:** every M6 commit passed `go test -count=1 ./...`, `go build`, and the Windows cross-build in the Debian Trixie container.
+- **VERIFIED — Adapter fixtures:** openStoryViewer missing/ambiguous/image/video/unknown outcomes; existing identity fixtures still pass.
+- **VERIFIED — CSS validator tests:** @import, url(), expression/javascript, style breakout, unbalanced braces, oversize, and density/scale bounds are rejected; malformed saves never clobber the last-known-good CSS; disable keeps the recovery copy; corrupt stored appearance degrades to defaults while keeping the recovery point.
+- **NOT RUNTIME VERIFIED:** story save against a real logged-in status viewer, appearance rules against live WhatsApp DOM, custom CSS rendering in both WebViews, and a manual keyboard/recovery pass on Windows/Linux desktops.
+
+## 12. Release Validation Record
 
 For every milestone report, list command or manual action, OS/version/architecture, result, and label. Record unavailable tests explicitly. A release candidate must include Windows and Linux result sets separately; no cross-platform generalization from one OS is allowed.
