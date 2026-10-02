@@ -146,6 +146,16 @@ Pin {
 
 Never invent an identity for an ambiguous chat. `chat_key` must not be presented as a permanent WhatsApp ID; adapter migration can mark a pin unresolved. There is no application-defined limit on pin count; safe file-size/decoding guards may exist but must not silently truncate records.
 
+Implemented in M5: the DOM adapter (v2) issues `chat:`/`msg:` keys as 16-hex
+double-FNV hashes of the provenance-prefixed raw attribute (`data-id` →
+confidence high; visible title → `title-fallback`, medium, rename-sensitive).
+Raw WhatsApp attributes never leave the adapter. Ambiguous or missing inputs
+produce no key. The store keeps `pins`, `bookmarks`, `labels`, and `notes`
+with strict validation: opaque-key charset, adapter-version pinning, alias
+length caps, bookmark duplicates (chat+message) rejected, excerpts rejected
+outright in M5, label references resolved or rejected, and note text bounded
+at 8 KiB rendered as text only.
+
 ### Bookmark
 
 ```text

@@ -132,6 +132,13 @@ Live DOM validation is required for any feature that depends on a current chat r
 - **NOT RUNTIME VERIFIED (Windows):** toast sound/activation behavior, numeric taskbar overlay rendering, tray icon/menu interactions, and minimize/close-to-tray lock enforcement — all gated by cross-build, vet, and source-string tests only.
 - **NOT RUNTIME VERIFIED:** Control Center tray card interaction (UI rendered code reviewed; not driven in a live page), recovery-code flow in the native dialogs, and live WhatsApp DOM surfaces.
 
-## 10. Release Validation Record
+## 10. Validation Record — Milestone 5
+
+- **VERIFIED — Go tests, Linux build, Windows x64 cross-build:** every M5 commit passed `go test -count=1 ./...`, `go build`, and the Windows cross-build in the Debian Trixie container.
+- **VERIFIED — Adapter fixtures:** the Node fixture suite (extended for adapter v2) covers identity key opacity/determinism, data-id vs title-fallback confidence, rename sensitivity, hash-collision ambiguity fail-closed, message/latest-message identity, and messageNodeByKey missing/ambiguous outcomes.
+- **VERIFIED — Store CRUD:** pin lifecycle across controller reloads, immutable identity fields through updates, full-order reorder validation, duplicate rejection, label cascade detach, note bounds and single-anchor rules.
+- **NOT RUNTIME VERIFIED:** all Control Center productivity cards against live WhatsApp Web (pin from a real chat, opening rows, bookmarking a real message), since a live logged-in session was not used. Identity keys are hash-based, so adapter changes are expected to surface as unresolved pins/bookmarks by design.
+
+## 11. Release Validation Record
 
 For every milestone report, list command or manual action, OS/version/architecture, result, and label. Record unavailable tests explicitly. A release candidate must include Windows and Linux result sets separately; no cross-platform generalization from one OS is allowed.
