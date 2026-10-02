@@ -758,6 +758,13 @@ func runApp() {
 	_ = w.Bind("setNotificationsEnabledNative", setNotificationsEnabled)
 	_ = w.Bind("getTraySettingsNative", getTraySettingsJSON)
 	_ = w.Bind("setTraySettingsNative", setTraySettingsJSON)
+	// Local productivity (M5): bounded JSON proposals; Go re-validates.
+	_ = w.Bind("pinAddNative", pinAddJSON)
+	_ = w.Bind("pinListNative", pinListJSON)
+	_ = w.Bind("pinRenameNative", pinRenameJSON)
+	_ = w.Bind("pinReorderNative", pinReorderJSON)
+	_ = w.Bind("pinRemoveNative", pinRemoveJSON)
+	_ = w.Bind("pinClearNative", pinClearJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		// Note: do NOT call w.Suspend() here. The webview2 vendor library already

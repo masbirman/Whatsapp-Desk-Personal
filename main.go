@@ -3803,6 +3803,88 @@ func getInitScript(ua string) string {
 					revealModifier.disabled = !editable;
 					document.getElementById('wa-privacy-copy-custom').disabled = !supported;
 					document.getElementById('wa-privacy-reset').disabled = !supported;
+					// Local pins (M5-02): render from the native store; identity
+					// resolution and opening go through the DOM adapter.
+					var pinsList = document.getElementById('wa-pins-list');
+					var pinsStatus = document.getElementById('wa-pins-status');
+					var renderPins = function() {
+						if (!pinsList) return;
+						window.waPinList().then(function(envelope) {
+							pinsList.innerHTML = '';
+							var pins = (envelope && envelope.ok && envelope.pins) ? envelope.pins : [];
+							pinsStatus.textContent = pins.length === 0 ? 'No pins yet. Open a chat list row, then pin the active chat.' : pins.length + ' pin(s), stored locally only.';
+							pins.forEach(function(pin, index) {
+								var row = document.createElement('div');
+								row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;';
+								var label = document.createElement('span');
+								label.className = 'wa-text-primary';
+								label.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+								label.textContent = pin.display_label || 'Pinned chat';
+								label.title = pin.confidence === 'high' ? 'High-confidence identity' : 'Medium-confidence identity (title-based; a rename may invalidate it)';
+								var chip = document.createElement('span');
+								chip.style.cssText = 'font-size:9px;padding:1px 4px;border-radius:4px;border:1px solid rgba(127,127,127,.35);flex-shrink:0;';
+								chip.textContent = pin.confidence === 'high' ? 'high' : 'medium';
+								var mkBtn = function(text, title, handler) {
+									var button = document.createElement('button');
+									button.className = 'wa-card-btn';
+									button.style.cssText = 'padding:2px 6px;border-radius:5px;font-size:10px;cursor:pointer;border-width:1px;border-style:solid;flex-shrink:0;';
+									button.textContent = text;
+									button.title = title;
+									button.onclick = handler;
+									return button;
+								};
+								var move = function(delta) {
+									var ids = pins.map(function(p) { return p.ID; });
+									var target = index + delta;
+									if (target < 0 || target >= ids.length) return;
+									var swapped = ids[index];
+									ids[index] = ids[target];
+									ids[target] = swapped;
+									window.waPinReorder(ids).then(renderPins);
+								};
+								var doOpen = function() {
+									window.waPinOpen(pin.chat_key).then(function(result) {
+										if (!result.ok) window.showFloatingToast && window.showFloatingToast('📌 ' + result.error);
+									});
+								};
+								var doRename = function() {
+									if (label.querySelector('input')) return;
+									var input = document.createElement('input');
+									input.value = pin.display_label || '';
+									input.maxLength = 128;
+									input.setAttribute('aria-label', 'Pin alias');
+									input.style.cssText = 'flex:1;min-width:0;padding:2px 4px;font-size:11px;';
+									label.textContent = '';
+									label.appendChild(input);
+									input.focus();
+									var commit = function() { window.waPinRename(pin.ID, input.value).then(renderPins); };
+									input.onkeydown = function(e) { if (e.key === 'Enter') commit(); if (e.key === 'Escape') renderPins(); };
+									input.onblur = commit;
+								};
+								row.appendChild(chip);
+								row.appendChild(label);
+								row.appendChild(mkBtn('Open', 'Open this pinned chat', doOpen));
+								row.appendChild(mkBtn('↑', 'Move up', function() { move(-1); }));
+								row.appendChild(mkBtn('↓', 'Move down', function() { move(1); }));
+								row.appendChild(mkBtn('Rename', 'Rename pin', doRename));
+								row.appendChild(mkBtn('✕', 'Remove pin', function() { window.waPinRemove(pin.ID).then(renderPins); }));
+								pinsList.appendChild(row);
+							});
+						}).catch(function() { pinsStatus.textContent = 'Pins unavailable'; });
+					};
+					var pinAdd = document.getElementById('wa-pin-add');
+					if (pinAdd) pinAdd.onclick = function() {
+						window.waPinActiveChat().then(function(result) {
+							if (result.ok) renderPins();
+							else window.showFloatingToast && window.showFloatingToast('📌 ' + (result.error || 'Could not pin this chat'));
+						});
+					};
+					var pinClear = document.getElementById('wa-pin-clear');
+					if (pinClear) pinClear.onclick = function() {
+						window.waPinClear().then(renderPins);
+					};
+					renderPins();
+
 					var trayStatus = document.getElementById('wa-tray-status');
 					if (trayStatus && window.getTraySettingsNative) {
 						Promise.resolve(window.getTraySettingsNative()).then(function(raw) {

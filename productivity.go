@@ -386,3 +386,91 @@ func (c *AppStateController) clearCollection(event AppEventKind, load func() []j
 	_, err := saveCollection(c, load(), []json.RawMessage{}, event)
 	return err
 }
+
+// --- Bridge JSON handlers ----------------------------------------------------
+// The page proposes pin operations through bounded JSON; every handler re-
+// validates in Go and returns a safe envelope (never raw identity payloads
+// or error internals beyond a short reason).
+
+type pinEnvelope struct {
+	OK    bool        `json:"ok"`
+	Pin   *PinRecord  `json:"pin,omitempty"`
+	Pins  []PinRecord `json:"pins,omitempty"`
+	Error string      `json:"error,omitempty"`
+}
+
+func pinFailure(err error) string {
+	data, _ := json.Marshal(pinEnvelope{OK: false, Error: err.Error()})
+	return string(data)
+}
+
+func pinAddJSON(raw string) string {
+	var request PinRecord
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return pinFailure(errors.New("invalid pin request"))
+	}
+	pin, err := applicationState.AddPin(request)
+	if err != nil {
+		return pinFailure(err)
+	}
+	data, marshalErr := json.Marshal(pinEnvelope{OK: true, Pin: &pin})
+	if marshalErr != nil {
+		return pinFailure(errors.New("pin could not be encoded"))
+	}
+	return string(data)
+}
+
+func pinListJSON() string {
+	pins, err := applicationState.ListPins()
+	if err != nil {
+		return pinFailure(err)
+	}
+	data, marshalErr := json.Marshal(pinEnvelope{OK: true, Pins: pins})
+	if marshalErr != nil {
+		return pinFailure(errors.New("pins could not be encoded"))
+	}
+	return string(data)
+}
+
+func pinRenameJSON(id, alias string) string {
+	if len(id) != recordIDBytes*2 {
+		return pinFailure(errors.New("invalid pin id"))
+	}
+	pin, err := applicationState.UpdatePin(id, func(p *PinRecord) { p.DisplayLabel = alias })
+	if err != nil {
+		return pinFailure(err)
+	}
+	data, marshalErr := json.Marshal(pinEnvelope{OK: true, Pin: &pin})
+	if marshalErr != nil {
+		return pinFailure(errors.New("pin could not be encoded"))
+	}
+	return string(data)
+}
+
+func pinReorderJSON(raw string) string {
+	var ids []string
+	if err := json.Unmarshal([]byte(raw), &ids); err != nil {
+		return pinFailure(errors.New("invalid pin order"))
+	}
+	if err := applicationState.ReorderPins(ids); err != nil {
+		return pinFailure(err)
+	}
+	return pinListJSON()
+}
+
+func pinRemoveJSON(id string) string {
+	if len(id) != recordIDBytes*2 {
+		return pinFailure(errors.New("invalid pin id"))
+	}
+	if err := applicationState.RemovePin(id); err != nil {
+		return pinFailure(err)
+	}
+	return pinListJSON()
+}
+
+func pinClearJSON() string {
+	if err := applicationState.ClearPins(); err != nil {
+		return pinFailure(err)
+	}
+	return pinListJSON()
+}
