@@ -146,6 +146,16 @@ Live DOM validation is required for any feature that depends on a current chat r
 - **VERIFIED — CSS validator tests:** @import, url(), expression/javascript, style breakout, unbalanced braces, oversize, and density/scale bounds are rejected; malformed saves never clobber the last-known-good CSS; disable keeps the recovery copy; corrupt stored appearance degrades to defaults while keeping the recovery point.
 - **NOT RUNTIME VERIFIED:** story save against a real logged-in status viewer, appearance rules against live WhatsApp DOM, custom CSS rendering in both WebViews, and a manual keyboard/recovery pass on Windows/Linux desktops.
 
-## 12. Release Validation Record
+## 12. Validation Record — Milestone 7
+
+- **VERIFIED — Full regression:** `go test -count=1 ./...` (all suites), Linux build, Windows x64 cross-build and vet, and the Node adapter fixture suite on the final HEAD.
+- **VERIFIED — Fork identity (M7-01):** updater repo constant, URL allow-list, release scripts, README, and the issue-reporter link all target `masbirman/Whatsapp-Desk-Personal`; upstream release URLs are regression-tested as REJECTED by the allow-list.
+- **VERIFIED — Mandatory checksums (M7-02):** updates refuse a release without SHA256SUMS; mismatches are always fatal; malformed digests are rejected; the sums are fetched from the artifact's own release directory. CI publishes SHA256SUMS with every release.
+- **VERIFIED — Linux packaging (M7-04):** `build_linux.sh` produced the WebKitGTK-4.1 tarball and `.deb` inside the container. Note: on this workspace the `.deb` step only fails when building directly on the NTFS mount (dpkg-deb rejects 0777 control dirs); on a native filesystem it succeeds — an environment property, not a script defect.
+- **VERIFIED — Runtime checks carried forward (Ubuntu, GNOME Wayland):** native lock dialog flows, idle lock trigger, fail-closed cancel loop, notification policy→driver delivery, dbusmenu layout/events, tray absent degradation, WebView session reconnection after lock cycles.
+- **VERIFIED — Idle performance spot-check (M7-05):** fresh isolated profile at the QR page: main process RSS ≈175 MB, CPU settling to ≈7% after load; observers are bounded (title MutationObserver with a 3 s fallback poll, 1 s lock watcher, 4 h update ticker). A longer measurement with a logged-in session is future work.
+- **NOT RUNTIME VERIFIED:** Windows desktop behavior of any kind (cross-build/vet/source tests only); a live logged-in WhatsApp session (privacy surfaces, pins/bookmarks opening real chats, story save, custom CSS rendering); a live self-update download through the fork's updater.
+
+## 13. Release Validation Record
 
 For every milestone report, list command or manual action, OS/version/architecture, result, and label. Record unavailable tests explicitly. A release candidate must include Windows and Linux result sets separately; no cross-platform generalization from one OS is allowed.
