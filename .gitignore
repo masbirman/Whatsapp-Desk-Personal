@@ -32,3 +32,6 @@ PRODUCT.md
 # Local-only (never publish)
 BENCHMARK_RESULTS.md
 WhatsAppDesk.entitlements
+
+# Local release staging (built by build_linux.sh / release prep)
+dist_release/
