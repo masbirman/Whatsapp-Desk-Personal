@@ -769,6 +769,17 @@ func runApp() {
 	_ = w.Bind("bookmarkListNative", bookmarkListJSON)
 	_ = w.Bind("bookmarkRemoveNative", bookmarkRemoveJSON)
 	_ = w.Bind("bookmarkClearNative", bookmarkClearJSON)
+	_ = w.Bind("labelAddNative", labelAddJSON)
+	_ = w.Bind("labelListNative", labelListJSON)
+	_ = w.Bind("labelRenameNative", labelRenameJSON)
+	_ = w.Bind("labelRemoveNative", labelRemoveJSON)
+	_ = w.Bind("labelClearNative", labelClearJSON)
+	_ = w.Bind("bookmarkSetLabelsNative", bookmarkSetLabelsJSON)
+	_ = w.Bind("noteAddNative", noteAddJSON)
+	_ = w.Bind("noteListNative", noteListJSON)
+	_ = w.Bind("noteUpdateNative", noteUpdateJSON)
+	_ = w.Bind("noteRemoveNative", noteRemoveJSON)
+	_ = w.Bind("noteClearNative", noteClearJSON)
 
 	_ = w.Bind("releaseMemoryNative", func() {
 		// Note: do NOT call w.Suspend() here. The webview2 vendor library already

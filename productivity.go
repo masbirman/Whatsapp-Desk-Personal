@@ -597,3 +597,454 @@ func bookmarkClearJSON() string {
 	}
 	return bookmarkListJSON()
 }
+
+// --- Labels -----------------------------------------------------------------
+
+func (c *AppStateController) ListLabels() ([]LabelRecord, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	labels, err := decodeCollection[LabelRecord](c.store.Labels)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(labels, func(i, j int) bool { return labels[i].Name < labels[j].Name })
+	return labels, nil
+}
+
+func (c *AppStateController) AddLabel(name, color string) (LabelRecord, error) {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > maxLabelNameBytes {
+		return LabelRecord{}, errors.New("label name must be 1-64 characters")
+	}
+	if err := validateLabelColor(color); err != nil {
+		return LabelRecord{}, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	labels, err := decodeCollection[LabelRecord](c.store.Labels)
+	if err != nil {
+		return LabelRecord{}, err
+	}
+	for _, existing := range labels {
+		if strings.EqualFold(existing.Name, name) {
+			return LabelRecord{}, errors.New("a label with this name already exists")
+		}
+	}
+	id, err := newRecordID()
+	if err != nil {
+		return LabelRecord{}, err
+	}
+	now := nowStamp()
+	label := LabelRecord{ID: id, Name: name, Color: color, CreatedAt: now, UpdatedAt: now}
+	labels = append(labels, label)
+	if _, err := saveCollection(c, c.store.Labels, labels, AppEventLabelsChanged); err != nil {
+		return LabelRecord{}, err
+	}
+	return label, nil
+}
+
+func (c *AppStateController) RenameLabel(id, name string) error {
+	name = strings.TrimSpace(name)
+	if name == "" || len(name) > maxLabelNameBytes {
+		return errors.New("label name must be 1-64 characters")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	labels, err := decodeCollection[LabelRecord](c.store.Labels)
+	if err != nil {
+		return err
+	}
+	for i := range labels {
+		if labels[i].ID != id {
+			continue
+		}
+		for j, other := range labels {
+			if j != i && strings.EqualFold(other.Name, name) {
+				return errors.New("a label with this name already exists")
+			}
+		}
+		labels[i].Name = name
+		labels[i].UpdatedAt = nowStamp()
+		_, err := saveCollection(c, c.store.Labels, labels, AppEventLabelsChanged)
+		return err
+	}
+	return errors.New("label not found")
+}
+
+// RemoveLabel detaches the label from every bookmark instead of leaving a
+// broken reference behind.
+func (c *AppStateController) RemoveLabel(id string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	labels, err := decodeCollection[LabelRecord](c.store.Labels)
+	if err != nil {
+		return err
+	}
+	found := false
+	keptLabels := labels[:0:0]
+	for _, label := range labels {
+		if label.ID == id {
+			found = true
+			continue
+		}
+		keptLabels = append(keptLabels, label)
+	}
+	if !found {
+		return errors.New("label not found")
+	}
+	bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+	if err != nil {
+		return err
+	}
+	detached := false
+	for i := range bookmarks {
+		filtered := bookmarks[i].LabelIDs[:0]
+		for _, labelID := range bookmarks[i].LabelIDs {
+			if labelID != id {
+				filtered = append(filtered, labelID)
+			}
+		}
+		if len(filtered) != len(bookmarks[i].LabelIDs) {
+			bookmarks[i].LabelIDs = filtered
+			bookmarks[i].UpdatedAt = nowStamp()
+			detached = true
+		}
+	}
+	if _, err := saveCollection(c, c.store.Labels, keptLabels, AppEventLabelsChanged); err != nil {
+		return err
+	}
+	if detached {
+		if _, err := saveCollection(c, c.store.Bookmarks, bookmarks, AppEventBookmarksChanged); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// SetBookmarkLabels replaces a bookmark's label list; every label ID must
+// already exist (broken references are rejected, never stored).
+func (c *AppStateController) SetBookmarkLabels(bookmarkID string, labelIDs []string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	labels, err := decodeCollection[LabelRecord](c.store.Labels)
+	if err != nil {
+		return err
+	}
+	known := make(map[string]bool, len(labels))
+	for _, label := range labels {
+		known[label.ID] = true
+	}
+	seen := make(map[string]bool, len(labelIDs))
+	for _, labelID := range labelIDs {
+		if !known[labelID] {
+			return errors.New("unknown label reference")
+		}
+		if seen[labelID] {
+			return errors.New("duplicate label reference")
+		}
+		seen[labelID] = true
+	}
+	bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+	if err != nil {
+		return err
+	}
+	for i := range bookmarks {
+		if bookmarks[i].ID != bookmarkID {
+			continue
+		}
+		bookmarks[i].LabelIDs = labelIDs
+		bookmarks[i].UpdatedAt = nowStamp()
+		_, err := saveCollection(c, c.store.Bookmarks, bookmarks, AppEventBookmarksChanged)
+		return err
+	}
+	return errors.New("bookmark not found")
+}
+
+// --- Notes ------------------------------------------------------------------
+
+func (c *AppStateController) ListNotes() ([]NoteRecord, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	notes, err := decodeCollection[NoteRecord](c.store.Notes)
+	if err != nil {
+		return nil, err
+	}
+	sort.SliceStable(notes, func(i, j int) bool { return notes[i].UpdatedAt > notes[j].UpdatedAt })
+	return notes, nil
+}
+
+func (c *AppStateController) AddNote(chatKey, bookmarkID, text string) (NoteRecord, error) {
+	if len(text) == 0 || len(text) > maxNoteTextBytes {
+		return NoteRecord{}, errors.New("note text must be 1-8192 bytes")
+	}
+	// A note is tied to at most one anchor; both may be empty for a free note.
+	if chatKey != "" && bookmarkID != "" {
+		return NoteRecord{}, errors.New("a note anchors to a chat or a bookmark, not both")
+	}
+	if chatKey != "" || bookmarkID != "" {
+		if err := validateIdentityFields(chatKeyOrBookmark(chatKey, bookmarkID), identityKindDataID, adapterVersionCurrent, identityConfidenceHigh); err != nil && chatKey != "" {
+			return NoteRecord{}, err
+		}
+		if chatKey != "" && len(chatKey) > maxIdentityKeyBytes {
+			return NoteRecord{}, errors.New("note chat key exceeds the supported length")
+		}
+		if bookmarkID != "" && len(bookmarkID) != recordIDBytes*2 {
+			return NoteRecord{}, errors.New("note bookmark reference is invalid")
+		}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	if bookmarkID != "" {
+		bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+		if err != nil {
+			return NoteRecord{}, err
+		}
+		exists := false
+		for _, bookmark := range bookmarks {
+			if bookmark.ID == bookmarkID {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			return NoteRecord{}, errors.New("unknown bookmark reference")
+		}
+	}
+	id, err := newRecordID()
+	if err != nil {
+		return NoteRecord{}, err
+	}
+	now := nowStamp()
+	note := NoteRecord{ID: id, ChatKey: chatKey, BookmarkID: bookmarkID, Text: text, CreatedAt: now, UpdatedAt: now}
+	notes, err := decodeCollection[NoteRecord](c.store.Notes)
+	if err != nil {
+		return NoteRecord{}, err
+	}
+	notes = append(notes, note)
+	if _, err := saveCollection(c, c.store.Notes, notes, AppEventNotesChanged); err != nil {
+		return NoteRecord{}, err
+	}
+	return note, nil
+}
+
+func chatKeyOrBookmark(chatKey, bookmarkID string) string {
+	if chatKey != "" {
+		return chatKey
+	}
+	return bookmarkID
+}
+
+func (c *AppStateController) UpdateNoteText(id, text string) error {
+	if len(text) == 0 || len(text) > maxNoteTextBytes {
+		return errors.New("note text must be 1-8192 bytes")
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	notes, err := decodeCollection[NoteRecord](c.store.Notes)
+	if err != nil {
+		return err
+	}
+	for i := range notes {
+		if notes[i].ID != id {
+			continue
+		}
+		notes[i].Text = text
+		notes[i].UpdatedAt = nowStamp()
+		_, err := saveCollection(c, c.store.Notes, notes, AppEventNotesChanged)
+		return err
+	}
+	return errors.New("note not found")
+}
+
+func (c *AppStateController) RemoveNote(id string) error {
+	return removeFromCollection(c, id, AppEventNotesChanged,
+		func() []json.RawMessage { return c.store.Notes },
+		func(raw []json.RawMessage) ([]NoteRecord, error) { return decodeCollection[NoteRecord](raw) })
+}
+
+func (c *AppStateController) ClearNotes() error {
+	return c.clearCollection(AppEventNotesChanged, func() []json.RawMessage { return c.store.Notes })
+}
+
+func (c *AppStateController) ClearLabels() error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.ensureLoadedLocked()
+	if len(c.store.Labels) == 0 {
+		return nil
+	}
+	// Clearing labels also detaches every bookmark reference.
+	bookmarks, err := decodeCollection[BookmarkRecord](c.store.Bookmarks)
+	if err == nil {
+		for i := range bookmarks {
+			if len(bookmarks[i].LabelIDs) > 0 {
+				bookmarks[i].LabelIDs = []string{}
+				bookmarks[i].UpdatedAt = nowStamp()
+			}
+		}
+		if _, err := saveCollection(c, c.store.Bookmarks, bookmarks, AppEventBookmarksChanged); err != nil {
+			return err
+		}
+	}
+	_, err = saveCollection(c, c.store.Labels, []LabelRecord{}, AppEventLabelsChanged)
+	return err
+}
+
+// --- Label/note/filter bridge handlers ---------------------------------------
+
+func labelEnvelope(ok bool, labels []LabelRecord, errValue error) string {
+	if errValue != nil {
+		data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": errValue.Error()})
+		return string(data)
+	}
+	data, marshalErr := json.Marshal(map[string]interface{}{"ok": true, "labels": labels})
+	if marshalErr != nil {
+		data, _ = json.Marshal(map[string]interface{}{"ok": false, "error": "labels could not be encoded"})
+	}
+	return string(data)
+}
+
+func labelFailure(err error) string {
+	data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": err.Error()})
+	return string(data)
+}
+
+func labelAddJSON(raw string) string {
+	var request struct {
+		Name  string `json:"name"`
+		Color string `json:"color"`
+	}
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return labelFailure(errors.New("invalid label request"))
+	}
+	label, err := applicationState.AddLabel(request.Name, request.Color)
+	if err != nil {
+		return labelFailure(err)
+	}
+	return labelEnvelope(true, []LabelRecord{label}, nil)
+}
+
+func labelListJSON() string {
+	labels, err := applicationState.ListLabels()
+	if err != nil {
+		return labelFailure(err)
+	}
+	return labelEnvelope(true, labels, nil)
+}
+
+func labelRenameJSON(id, name string) string {
+	if len(id) != recordIDBytes*2 {
+		return labelFailure(errors.New("invalid label id"))
+	}
+	if err := applicationState.RenameLabel(id, name); err != nil {
+		return labelFailure(err)
+	}
+	return labelListJSON()
+}
+
+func labelRemoveJSON(id string) string {
+	if len(id) != recordIDBytes*2 {
+		return labelFailure(errors.New("invalid label id"))
+	}
+	if err := applicationState.RemoveLabel(id); err != nil {
+		return labelFailure(err)
+	}
+	return labelListJSON()
+}
+
+func labelClearJSON() string {
+	if err := applicationState.ClearLabels(); err != nil {
+		return labelFailure(err)
+	}
+	return labelListJSON()
+}
+
+func bookmarkSetLabelsJSON(bookmarkID, raw string) string {
+	if len(bookmarkID) != recordIDBytes*2 {
+		return bookmarkFailure(errors.New("invalid bookmark id"))
+	}
+	var labelIDs []string
+	if err := json.Unmarshal([]byte(raw), &labelIDs); err != nil {
+		return bookmarkFailure(errors.New("invalid label reference list"))
+	}
+	if err := applicationState.SetBookmarkLabels(bookmarkID, labelIDs); err != nil {
+		return bookmarkFailure(err)
+	}
+	return bookmarkListJSON()
+}
+
+func noteEnvelope(ok bool, notes []NoteRecord, errValue error) string {
+	if errValue != nil {
+		data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": errValue.Error()})
+		return string(data)
+	}
+	data, marshalErr := json.Marshal(map[string]interface{}{"ok": true, "notes": notes})
+	if marshalErr != nil {
+		data, _ = json.Marshal(map[string]interface{}{"ok": false, "error": "notes could not be encoded"})
+	}
+	return string(data)
+}
+
+func noteFailure(err error) string {
+	data, _ := json.Marshal(map[string]interface{}{"ok": false, "error": err.Error()})
+	return string(data)
+}
+
+func noteAddJSON(raw string) string {
+	var request struct {
+		ChatKey    string `json:"chat_key"`
+		BookmarkID string `json:"bookmark_id"`
+		Text       string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(raw), &request); err != nil {
+		return noteFailure(errors.New("invalid note request"))
+	}
+	note, err := applicationState.AddNote(request.ChatKey, request.BookmarkID, request.Text)
+	if err != nil {
+		return noteFailure(err)
+	}
+	return noteEnvelope(true, []NoteRecord{note}, nil)
+}
+
+func noteListJSON() string {
+	notes, err := applicationState.ListNotes()
+	if err != nil {
+		return noteFailure(err)
+	}
+	return noteEnvelope(true, notes, nil)
+}
+
+func noteUpdateJSON(id, text string) string {
+	if len(id) != recordIDBytes*2 {
+		return noteFailure(errors.New("invalid note id"))
+	}
+	if err := applicationState.UpdateNoteText(id, text); err != nil {
+		return noteFailure(err)
+	}
+	return noteListJSON()
+}
+
+func noteRemoveJSON(id string) string {
+	if len(id) != recordIDBytes*2 {
+		return noteFailure(errors.New("invalid note id"))
+	}
+	if err := applicationState.RemoveNote(id); err != nil {
+		return noteFailure(err)
+	}
+	return noteListJSON()
+}
+
+func noteClearJSON() string {
+	if err := applicationState.ClearNotes(); err != nil {
+		return noteFailure(err)
+	}
+	return noteListJSON()
+}

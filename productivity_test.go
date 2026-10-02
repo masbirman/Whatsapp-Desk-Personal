@@ -158,3 +158,97 @@ func TestClearPinsRemovesEverything(t *testing.T) {
 		t.Fatalf("second clear must be a no-op: %v", err)
 	}
 }
+
+func TestLabelLifecycleAndCascade(t *testing.T) {
+	useTempAppConfig(t)
+	controller := NewAppStateController()
+	red, err := controller.AddLabel("Kantor", "#ff0000")
+	if err != nil {
+		t.Fatalf("AddLabel: %v", err)
+	}
+	if _, err := controller.AddLabel("kantor", "#00ff00"); err == nil {
+		t.Fatal("case-insensitive duplicate names must be rejected")
+	}
+	if _, err := controller.AddLabel("Bad color", "red"); err == nil {
+		t.Fatal("non-hex colors must be rejected")
+	}
+	if _, err := controller.AddLabel(strings.Repeat("x", maxLabelNameBytes+1), "#ff0000"); err == nil {
+		t.Fatal("oversized names must be rejected")
+	}
+
+	bookmark, err := controller.AddBookmark(BookmarkRecord{
+		ChatKey:        "chat:1111111111111111",
+		MessageKey:     "msg:2222222222222222",
+		IdentityKind:   identityKindDataID,
+		AdapterVersion: adapterVersionCurrent,
+		Confidence:     identityConfidenceHigh,
+	})
+	if err != nil {
+		t.Fatalf("AddBookmark: %v", err)
+	}
+	if err := controller.SetBookmarkLabels(bookmark.ID, []string{red.ID}); err != nil {
+		t.Fatalf("SetBookmarkLabels: %v", err)
+	}
+	if err := controller.SetBookmarkLabels(bookmark.ID, []string{"unknown"}); err == nil {
+		t.Fatal("unknown label references must be rejected")
+	}
+	bookmarks, _ := controller.ListBookmarks()
+	if len(bookmarks) != 1 || len(bookmarks[0].LabelIDs) != 1 {
+		t.Fatalf("label not stored: %+v", bookmarks)
+	}
+
+	// Removing the label detaches it from bookmarks instead of leaving a
+	// broken reference.
+	if err := controller.RemoveLabel(red.ID); err != nil {
+		t.Fatalf("RemoveLabel: %v", err)
+	}
+	bookmarks, _ = controller.ListBookmarks()
+	if len(bookmarks[0].LabelIDs) != 0 {
+		t.Fatalf("label reference not detached: %+v", bookmarks[0])
+	}
+	labels, _ := controller.ListLabels()
+	if len(labels) != 0 {
+		t.Fatalf("label not removed: %+v", labels)
+	}
+}
+
+func TestNoteLifecycleAndBounds(t *testing.T) {
+	useTempAppConfig(t)
+	controller := NewAppStateController()
+	note, err := controller.AddNote("chat:1234567890abcdef", "", "Catatan pribadi")
+	if err != nil {
+		t.Fatalf("AddNote: %v", err)
+	}
+	if _, err := controller.AddNote("", "", ""); err == nil {
+		t.Fatal("empty note text must be rejected")
+	}
+	if _, err := controller.AddNote("", "", strings.Repeat("x", maxNoteTextBytes+1)); err == nil {
+		t.Fatal("oversized note text must be rejected")
+	}
+	if _, err := controller.AddNote("chat:1", "bookmark", "both anchors"); err == nil {
+		t.Fatal("dual anchors must be rejected")
+	}
+	if _, err := controller.AddNote("", "nonexistentbookmark00", "dangling"); err == nil {
+		t.Fatal("unknown bookmark references must be rejected")
+	}
+	if err := controller.UpdateNoteText(note.ID, "Diperbarui"); err != nil {
+		t.Fatalf("UpdateNoteText: %v", err)
+	}
+	notes, _ := controller.ListNotes()
+	if len(notes) != 1 || notes[0].Text != "Diperbarui" {
+		t.Fatalf("note update not persisted: %+v", notes)
+	}
+	if err := controller.RemoveNote(note.ID); err != nil {
+		t.Fatalf("RemoveNote: %v", err)
+	}
+	if _, err := controller.AddNote("", "", "free note"); err != nil {
+		t.Fatalf("free note without anchors must be allowed: %v", err)
+	}
+	if err := controller.ClearNotes(); err != nil {
+		t.Fatalf("ClearNotes: %v", err)
+	}
+	notes, _ = controller.ListNotes()
+	if len(notes) != 0 {
+		t.Fatalf("notes not cleared: %+v", notes)
+	}
+}

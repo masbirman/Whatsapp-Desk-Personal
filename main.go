@@ -3814,6 +3814,7 @@ func getInitScript(ua string) string {
 							var pins = (envelope && envelope.ok && envelope.pins) ? envelope.pins : [];
 							pinsStatus.textContent = pins.length === 0 ? 'No pins yet. Open a chat list row, then pin the active chat.' : pins.length + ' pin(s), stored locally only.';
 							pins.forEach(function(pin, index) {
+								if (!matchesFilter(pin.display_label || 'Pinned chat')) return;
 								var row = document.createElement('div');
 								row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;';
 								var label = document.createElement('span');
@@ -3896,6 +3897,7 @@ func getInitScript(ua string) string {
 							var bookmarks = (envelope && envelope.ok && envelope.bookmarks) ? envelope.bookmarks : [];
 							bookmarksStatus.textContent = bookmarks.length === 0 ? 'No bookmarks yet. Open a chat, then bookmark its latest message.' : bookmarks.length + ' bookmark(s), message bodies are not stored.';
 							bookmarks.forEach(function(bookmark) {
+								if (!matchesFilter(bookmark.chat_label || 'Bookmarked message')) return;
 								var row = document.createElement('div');
 								row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;';
 								var label = document.createElement('span');
@@ -3937,6 +3939,109 @@ func getInitScript(ua string) string {
 						window.waBookmarkClear().then(renderBookmarks);
 					};
 					renderBookmarks();
+
+					// Labels, notes, and the shared local filter (M5-04). Notes
+					// are rendered with textContent only, never as HTML.
+					var labelsList = document.getElementById('wa-labels-list');
+					var notesList = document.getElementById('wa-notes-list');
+					var filterInput = document.getElementById('wa-prod-filter');
+					if (filterInput) filterInput.oninput = function() { window.waProductivityFilter(filterInput.value); };
+					window.__waProdRerender = function() { renderPins(); renderBookmarks(); renderNotes(); };
+					var matchesFilter = function(text) {
+						var filter = window.waProductivityFilterValue();
+						return !filter || String(text || '').toLowerCase().indexOf(filter) !== -1;
+					};
+					var renderLabels = function() {
+						if (!labelsList) return;
+						window.waLabelList().then(function(envelope) {
+							labelsList.innerHTML = '';
+							var labels = (envelope && envelope.ok && envelope.labels) ? envelope.labels : [];
+							labels.forEach(function(label) {
+								var row = document.createElement('div');
+								row.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:11px;';
+								var dot = document.createElement('span');
+								dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;background:' + (/^#[0-9a-fA-F]{6}$/.test(label.color) ? label.color : 'transparent') + ';border:1px solid rgba(127,127,127,.35);';
+								var name = document.createElement('span');
+								name.className = 'wa-text-primary';
+								name.style.cssText = 'flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+								name.textContent = label.name;
+								var mkBtn = function(text, title, handler) {
+									var button = document.createElement('button');
+									button.className = 'wa-card-btn';
+									button.style.cssText = 'padding:2px 6px;border-radius:5px;font-size:10px;cursor:pointer;border-width:1px;border-style:solid;flex-shrink:0;';
+									button.textContent = text;
+									button.title = title;
+									button.onclick = handler;
+									return button;
+								};
+								row.appendChild(dot);
+								row.appendChild(name);
+								row.appendChild(mkBtn('✕', 'Remove label (detaches it from bookmarks)', function() { window.waLabelRemove(label.ID).then(function() { window.__waProdRerender(); }); }));
+								labelsList.appendChild(row);
+							});
+						}).catch(function() {});
+					};
+					var labelAdd = document.getElementById('wa-label-add');
+					if (labelAdd) labelAdd.onclick = function() {
+						var nameInput = document.getElementById('wa-label-name');
+						var colorSelect = document.getElementById('wa-label-color');
+						window.waLabelAdd(nameInput.value, colorSelect.value).then(function(result) {
+							if (result.ok) { nameInput.value = ''; renderLabels(); }
+							else window.showFloatingToast && window.showFloatingToast('🏷️ ' + (result.error || 'Could not add label'));
+						});
+					};
+					var noteAdd = document.getElementById('wa-note-add');
+					if (noteAdd) noteAdd.onclick = function() {
+						var noteInput = document.getElementById('wa-note-new');
+						if (!noteInput.value.trim()) return;
+						window.waNoteAdd('', '', noteInput.value).then(function(result) {
+							if (result.ok) { noteInput.value = ''; renderNotes(); }
+							else window.showFloatingToast && window.showFloatingToast('📝 ' + (result.error || 'Could not add note'));
+						});
+					};
+					var renderNotes = function() {
+						if (!notesList) return;
+						window.waNoteList().then(function(envelope) {
+							notesList.innerHTML = '';
+							var notes = (envelope && envelope.ok && envelope.notes) ? envelope.notes : [];
+							notes.forEach(function(note) {
+								if (!matchesFilter(note.text)) return;
+								var row = document.createElement('div');
+								row.style.cssText = 'display:flex;align-items:flex-start;gap:6px;font-size:11px;';
+								var text = document.createElement('span');
+								text.className = 'wa-text-primary';
+								text.style.cssText = 'flex:1;min-width:0;white-space:pre-wrap;word-break:break-word;';
+								text.textContent = note.text;
+								var mkBtn = function(text2, title, handler) {
+									var button = document.createElement('button');
+									button.className = 'wa-card-btn';
+									button.style.cssText = 'padding:2px 6px;border-radius:5px;font-size:10px;cursor:pointer;border-width:1px;border-style:solid;flex-shrink:0;';
+									button.textContent = text2;
+									button.title = title;
+									button.onclick = handler;
+									return button;
+								};
+								row.appendChild(text);
+								row.appendChild(mkBtn('Edit', 'Edit note', function() {
+									if (text.querySelector('textarea')) return;
+									var area = document.createElement('textarea');
+									area.value = note.text;
+									area.maxLength = 8192;
+									area.setAttribute('aria-label', 'Edit note');
+									area.style.cssText = 'flex:1;min-width:0;padding:2px 4px;font-size:11px;';
+									text.textContent = '';
+									text.appendChild(area);
+									area.focus();
+									var commit = function() { window.waNoteUpdate(note.ID, area.value).then(renderNotes); };
+									area.onblur = commit;
+								}));
+								row.appendChild(mkBtn('✕', 'Delete note', function() { window.waNoteRemove(note.ID).then(renderNotes); }));
+								notesList.appendChild(row);
+							});
+						}).catch(function() {});
+					};
+					renderLabels();
+					renderNotes();
 
 					var trayStatus = document.getElementById('wa-tray-status');
 					if (trayStatus && window.getTraySettingsNative) {
