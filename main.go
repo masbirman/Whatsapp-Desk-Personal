@@ -1650,7 +1650,7 @@ func getInitScript(ua string) string {
 					lines.push(fence);
 				}
 				lines.push('_Submitted from the in-app reporter — please add steps to reproduce._');
-				var url = 'https://github.com/vianziro/Whatsapp-Dekstop/issues/new' +
+				var url = 'https://github.com/masbirman/Whatsapp-Desk-Personal/issues/new' +
 					'?title=' + encodeURIComponent('Report v' + meta.ver + ' (' + meta.platform + '): ') +
 					'&body=' + encodeURIComponent(lines.join('\n').slice(0, 2500)) +
 					'&labels=' + encodeURIComponent('bug');

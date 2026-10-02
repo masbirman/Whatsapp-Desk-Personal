@@ -145,10 +145,10 @@ func TestVerifyDownloadedChecksumMissingSumsRespectsPolicy(t *testing.T) {
 
 func TestReleaseBaseURLForAsset(t *testing.T) {
 	cases := []struct{ in, want string }{
-		{"https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsAppDesk.exe",
-			"https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/"},
-		{"https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.2/WhatsApp-Desk-macOS-Universal.zip",
-			"https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.2/"},
+		{"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsAppDesk.exe",
+			"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/"},
+		{"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/WhatsApp-Desk-macOS-Universal.zip",
+			"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/"},
 		{"https://example.com/dl/WhatsApp-Desk-Linux-x64.tar.gz?token=abc",
 			"https://example.com/dl/"},
 	}
@@ -183,11 +183,11 @@ func TestChecksumIsReadFromTheSameReleaseAsTheArtifact(t *testing.T) {
 	})
 	t.Cleanup(func() { checksumHTTPTransport = prev })
 
-	artifact := "https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.2/WhatsAppDesk.exe"
+	artifact := "https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/WhatsAppDesk.exe"
 	if err := verifyDownloadedChecksum(file, "WhatsAppDesk.exe", releaseBaseURLForAsset(artifact), true); err != nil {
 		t.Fatalf("pinned release checksum must verify: %v", err)
 	}
-	want := "https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.2/" + checksumFileName
+	want := "https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/" + checksumFileName
 	if requested != want {
 		t.Fatalf("checksum fetched from %q, want %q", requested, want)
 	}

@@ -29,7 +29,10 @@ type UIController interface {
 // version — they use the __WA_APP_VERSION__ placeholder replaced at runtime.
 var appVersion = "1.5.9.8"
 
-const githubRepo = "vianziro/Whatsapp-Dekstop"
+// githubRepo is this personal fork's release home. Updates may only ever
+// come from here; the upstream project's releases are never installed into
+// this fork (see M7-01).
+const githubRepo = "masbirman/Whatsapp-Desk-Personal"
 
 type GitHubAsset struct {
 	Name               string `json:"name"`
@@ -484,9 +487,9 @@ func isAllowedUpdateURL(rawURL string) bool {
 	if host != "github.com" {
 		return false
 	}
-	// e.g. /vianziro/Whatsapp-Dekstop/releases/download/v1.2.3/...
-	// or /vianziro/Whatsapp-Dekstop/releases/latest/download/...
-	return strings.HasPrefix(strings.ToLower(u.Path), "/vianziro/whatsapp-dekstop/releases/")
+	// e.g. /masbirman/Whatsapp-Desk-Personal/releases/download/v1.2.3/...
+	// or /masbirman/Whatsapp-Desk-Personal/releases/latest/download/...
+	return strings.HasPrefix(strings.ToLower(u.Path), "/masbirman/whatsapp-desk-personal/releases/")
 }
 
 func executeUpdate(ui UIController, downloadURL string) error {

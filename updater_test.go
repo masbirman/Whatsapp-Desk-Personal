@@ -119,11 +119,11 @@ func TestProgressWriterFallback(t *testing.T) {
 
 func TestIsAllowedUpdateURL(t *testing.T) {
 	allowed := []string{
-		"https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsAppDesk.exe",
-		"https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-Linux-x64.tar.gz",
-		"https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.8/WhatsApp-Desk-macOS-Universal.zip",
+		"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsAppDesk.exe",
+		"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-Linux-x64.tar.gz",
+		"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/WhatsApp-Desk-macOS-Universal.zip",
 		// Query strings must not bypass the check.
-		"https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.8/WhatsAppDesk.exe?token=abc",
+		"https://github.com/masbirman/Whatsapp-Desk-Personal/releases/download/v1.5.9.9/WhatsAppDesk.exe?token=abc",
 	}
 	for _, u := range allowed {
 		if !isAllowedUpdateURL(u) {
@@ -134,6 +134,10 @@ func TestIsAllowedUpdateURL(t *testing.T) {
 	blocked := []string{
 		"",
 		"not a url",
+		// The upstream project's release artifacts must never install into
+		// this fork (M7-01 gate).
+		"https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsAppDesk.exe",
+		"https://github.com/vianziro/Whatsapp-Dekstop/releases/download/v1.5.9.9/WhatsApp-Desk-Linux-x64.tar.gz",
 		"http://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsAppDesk.exe", // plain HTTP
 		"https://evil.example.com/WhatsAppDesk.exe",
 		"https://evil.example.com/vianziro/Whatsapp-Dekstop/releases/download/v1/evil.exe", // wrong host

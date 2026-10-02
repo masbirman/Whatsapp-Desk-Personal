@@ -23,7 +23,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-REPO="vianziro/Whatsapp-Dekstop"
+REPO="masbirman/Whatsapp-Desk-Personal"
 VERSION=""
 DRY_RUN=0
 
