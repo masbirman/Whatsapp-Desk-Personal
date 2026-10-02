@@ -3,11 +3,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/vianziro/Whatsapp-Dekstop/releases/latest"><img src="https://img.shields.io/github/v/release/vianziro/Whatsapp-Dekstop?label=release&color=18c77b&style=flat-square" alt="Latest Release"></a>
-  <a href="https://github.com/vianziro/Whatsapp-Dekstop/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0b1713?style=flat-square" alt="Platforms"></a>
+  <a href="https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest"><img src="https://img.shields.io/github/v/release/masbirman/Whatsapp-Desk-Personal?label=release&color=18c77b&style=flat-square" alt="Latest Release"></a>
+  <a href="https://github.com/masbirman/Whatsapp-Desk-Personal/releases"><img src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20%7C%20Linux-0b1713?style=flat-square" alt="Platforms"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-18c77b?style=flat-square" alt="License: MIT"></a>
   <a href="https://go.dev/"><img src="https://img.shields.io/badge/go-1.26+-00ADD8?style=flat-square&logo=go&logoColor=white" alt="Go Version"></a>
-  <a href="https://github.com/vianziro/Whatsapp-Dekstop/releases/latest"><img src="https://img.shields.io/badge/architecture-Universal%20%7C%20x64-555?style=flat-square" alt="Architecture"></a>
+  <a href="https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest"><img src="https://img.shields.io/badge/architecture-Universal%20%7C%20x64-555?style=flat-square" alt="Architecture"></a>
 </p>
 
 <p align="center">
@@ -24,12 +24,12 @@ Get the latest stable release for your operating system (updated automatically):
 
 | Platform | Recommended Installer | Portable / Archive | Requirements |
 | :--- | :--- | :--- | :--- |
-| **macOS** | [**Universal DMG**](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-macOS-Universal.dmg) | [Universal ZIP](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-macOS-Universal.zip) | macOS 11.0+ (Apple Silicon & Intel) |
-| **Windows 10 / 11** | [**Setup Wizard (.exe)**](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-Windows-x64-Setup.exe) | [Portable EXE](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsAppDesk.exe) | Windows 10/11 x64 (WebView2 runtime) |
-| **Linux** | [**Build from source**](#️-building--releasing) | [older releases (≤ v1.5.9.2)](https://github.com/vianziro/Whatsapp-Dekstop/releases) | GTK 3 & WebKitGTK 4.0 / 4.1 |
+| **macOS** | [**Universal DMG**](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-macOS-Universal.dmg) | [Universal ZIP](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-macOS-Universal.zip) | macOS 11.0+ (Apple Silicon & Intel) |
+| **Windows 10 / 11** | [**Setup Wizard (.exe)**](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-Windows-x64-Setup.exe) | [Portable EXE](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsAppDesk.exe) | Windows 10/11 x64 (WebView2 runtime) |
+| **Linux** | [**Build from source**](#️-building--releasing) | [older releases (≤ v1.5.9.2)](https://github.com/masbirman/Whatsapp-Desk-Personal/releases) | GTK 3 & WebKitGTK 4.0 / 4.1 |
 
 > [!TIP]
-> Download links point automatically to the latest release assets. You can also view all past versions and architectures on the [Releases](https://github.com/vianziro/Whatsapp-Dekstop/releases) page.
+> Download links point automatically to the latest release assets. You can also view all past versions and architectures on the [Releases](https://github.com/masbirman/Whatsapp-Desk-Personal/releases) page.
 
 ---
 
@@ -78,12 +78,12 @@ Get the latest stable release for your operating system (updated automatically):
 ## 📦 Installation & Setup
 
 ### macOS (Universal)
-1. Download [**WhatsApp-Desk-macOS-Universal.dmg**](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-macOS-Universal.dmg).
+1. Download [**WhatsApp-Desk-macOS-Universal.dmg**](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-macOS-Universal.dmg).
 2. Open the DMG and drag **WhatsApp Desk** into **Applications**.
 3. *First launch:* If macOS Gatekeeper alerts you, right-click the application and select **Open**.
 
 ### Windows 10 / 11 (x64)
-1. Download and run [**WhatsApp-Desk-Windows-x64-Setup.exe**](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/WhatsApp-Desk-Windows-x64-Setup.exe).
+1. Download and run [**WhatsApp-Desk-Windows-x64-Setup.exe**](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/WhatsApp-Desk-Windows-x64-Setup.exe).
 2. The setup wizard installs WhatsApp Desk per-user (no Administrator rights required) and adds Start Menu and desktop shortcuts.
 3. *SmartScreen Note:* Since community binaries are unsigned (no EV certificate), choose **More info** → **Run anyway**.
 
@@ -108,7 +108,7 @@ sudo dnf install ./WhatsApp-Desk-Fedora-x64.rpm
 
 ### Verifying Release Integrity
 
-Every release ships with a signed [SHA256SUMS](https://github.com/vianziro/Whatsapp-Dekstop/releases/latest/download/SHA256SUMS) checksum list:
+Every release ships with a signed [SHA256SUMS](https://github.com/masbirman/Whatsapp-Desk-Personal/releases/latest/download/SHA256SUMS) checksum list:
 
 ```bash
 # macOS
@@ -143,7 +143,7 @@ Every version's changes are recorded in **[CHANGELOG.md](CHANGELOG.md)**, which 
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. The published release notes are
 generated from it, so the two can never disagree.
 
-👉 **[Read the Changelog](CHANGELOG.md)** · **[View All Releases on GitHub](https://github.com/vianziro/Whatsapp-Dekstop/releases)**
+👉 **[Read the Changelog](CHANGELOG.md)** · **[View All Releases on GitHub](https://github.com/masbirman/Whatsapp-Desk-Personal/releases)**
 
 ---
 

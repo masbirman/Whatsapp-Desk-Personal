@@ -144,3 +144,49 @@ Do not claim regex blocking alone provides a complete CSS security boundary. Cho
 - Updater: upstream repository URL rejected; fork URL accepted; malformed owner/path, HTTP, redirect outside allowed policy, checksum missing/mismatch, oversized asset rejected.
 
 Security reporting for public release follows this repository's private vulnerability handling and keeps attribution intact.
+
+## 7. Milestone 7 Security Review (M7-03)
+
+Scope-by-scope status of the shipped surface:
+
+- **Native bridge (72 unique bindings).** Every binding validates type,
+  length, enum, or state in Go before any OS or filesystem effect: theme
+  enums, bounded notification events, URL allow-listing, filename/URI caps
+  on saves/previews, jail-checked file opens, bounded JSON for productivity
+  records. No binding exposes command execution, arbitrary path reads, the
+  lock verifier, or an unlock transition.
+- **Paths and symlinks.** The download directory is validated with symlink
+  resolution (including dangling targets) and blocked system/autostart
+  prefixes; file opens are jailed to the download and preview directories;
+  the settings store is replaced atomically with symlink refusal and a
+  corrupt-file recovery path.
+- **App lock.** Argon2id verifiers with bounded parameters, constant-time
+  compare, in-process backoff, native-only credential entry, fail-closed
+  dialogs, and no page-reachable unlock. It protects against casual local
+  access only (documented threat model, section 2).
+- **Notifications.** A single Go resolution point applies the policy and the
+  locked floor before the OS driver; corrupt policy data degrades to a
+  content-free presentation. Hidden sender/body values never cross to the
+  driver.
+- **Custom CSS.** Go-side validation rejects @import, all url() forms,
+  script constructs, breakout text, unbalanced braces, and oversize input;
+  last-known-good recovery plus Ctrl+Shift+X keyboard disable. The native
+  lock dialog is outside every CSS surface by construction.
+- **URLs.** Page links open in the system browser over HTTPS only; update
+  downloads are restricted to this fork's GitHub release artifacts, and
+  checksums are mandatory (missing SHA256SUMS refuses the update; a
+  mismatch is always fatal; the sums are fetched from the same release
+  directory as the artifact).
+- **Local records.** Pins/bookmarks/labels/notes are validated, bounded,
+  opaque-keyed, never synced, and contain no message bodies.
+
+**Accepted residual risks (documented, not open issues):**
+
+1. Custom CSS can visually disrupt page-level app overlays (Control Center);
+   native controls and the recovery shortcut remain usable.
+2. The app lock does not protect against a compromised OS account, an
+   administrator, or a copied profile (threat model, section 2).
+3. The updater trusts GitHub availability and the account holder of the
+   fork; releases are protected by GitHub auth plus mandatory checksums.
+4. Opening a downloaded file delegates to the OS handler; the app cannot
+   vet the file contents it saved at the user's request.
