@@ -3292,6 +3292,9 @@ func getInitScript(ua string) string {
 
 				var modal = document.createElement('div');
 				modal.id = 'wa-settings-container';
+				modal.setAttribute('role', 'dialog');
+				modal.setAttribute('aria-modal', 'true');
+				modal.setAttribute('aria-labelledby', 'wa-modal-title');
 				modal.style.cssText = 'width:520px;max-width:96vw;max-height:90vh;border-radius:10px;box-sizing:border-box;display:flex;flex-direction:column;gap:0;overflow-y:auto;padding:0 22px 18px;box-shadow:0 18px 48px rgba(0,0,0,.32);';
 
 				// Header
@@ -3307,8 +3310,31 @@ func getInitScript(ua string) string {
 					'    <span id="wa-modal-sub" style="font-size:11px;">Application settings · version __WA_APP_VERSION__</span>' +
 					'  </div>' +
 					'</div>' +
-					'<button id="wa-settings-close-x" style="background:transparent;border:none;cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:4px;">✕</button>';
+					'<button id="wa-settings-close-x" aria-label="Close Control Center" style="background:transparent;border:none;cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:4px;">✕</button>';
 				modal.appendChild(header);
+
+				// Keyboard support: Escape closes (existing keydown), Tab is
+				// trapped inside the dialog, and focus starts on the close
+				// button so keyboard users enter the dialog predictably.
+				var previouslyFocused = document.activeElement;
+				modal.addEventListener('keydown', function(e) {
+					if (e.key !== 'Tab') return;
+					var focusables = modal.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])');
+					if (!focusables.length) return;
+					var first = focusables[0];
+					var last = focusables[focusables.length - 1];
+					if (e.shiftKey && document.activeElement === first) {
+						e.preventDefault();
+						last.focus();
+					} else if (!e.shiftKey && document.activeElement === last) {
+						e.preventDefault();
+						first.focus();
+					}
+				});
+				var closeModalAndRestore = (typeof closeSettings === 'function') ? closeSettings : null;
+				overlay.addEventListener('keydown', function(e) {
+					if (e.key === 'Escape' && closeModalAndRestore) closeModalAndRestore();
+				});
 
 				// Section 0: Theme Switcher Segmented Control
 				var themeBox = document.createElement('div');
@@ -3537,6 +3563,8 @@ func getInitScript(ua string) string {
 
 				overlay.appendChild(modal);
 				document.body.appendChild(overlay);
+				var closeXForFocus = document.getElementById('wa-settings-close-x');
+				if (closeXForFocus) closeXForFocus.focus();
 				modal.addEventListener('pointerdown', function(e) { e.stopPropagation(); });
 				modal.addEventListener('click', function(e) { e.stopPropagation(); });
 
@@ -4443,6 +4471,8 @@ func getInitScript(ua string) string {
 					'<button id="wa-recovery-reload" style="background:#00a884;color:#111b21;border:none;padding:8px 14px;border-radius:6px;font-weight:600;cursor:pointer;">Reload WhatsApp Web</button>';
 				overlay.appendChild(card);
 				document.body.appendChild(overlay);
+				var closeXForFocus = document.getElementById('wa-settings-close-x');
+				if (closeXForFocus) closeXForFocus.focus();
 				var btn = document.getElementById('wa-recovery-reload');
 				if (btn) {
 					btn.onclick = function() {
