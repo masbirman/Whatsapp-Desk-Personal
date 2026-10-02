@@ -19,12 +19,16 @@ function install(queryMap) {
   return { api: window.waDOM, calls };
 }
 
-function element(name, selectorMatches = []) {
+function element(name, selectorMatches = [], attrs = {}, children = {}) {
   return {
     name,
     nodeType: 1,
     parentElement: null,
     matches(selector) { return selectorMatches.includes(selector); },
+    getAttribute(attr) { return attrs[attr] !== undefined ? attrs[attr] : null; },
+    setAttribute(attr, value) { attrs[attr] = value; },
+    querySelectorAll(selector) { return children[selector] || []; },
+    textContent: '',
   };
 }
 
@@ -128,8 +132,96 @@ function run() {
   assert.equal(privacyFixture.resolveCandidates('privacyTimestamps').length, 1);
 
   assert.equal(ambiguousAPI.selectors('unknownFeature').length, 0);
-  assert.equal(ambiguousAPI.version, 1);
+  assert.equal(ambiguousAPI.version, 2, 'adapter version tracks the identity contract');
   console.log('PASS: preferred/fallback/missing/ambiguous resolution, DOM ordering, privacy surface selectors, and closest-element behavior');
 }
 
+function runIdentity() {
+  const chatRowSelectors = ['[data-testid="cell-frame-container"]'];
+  const titleSelectors = ['[data-testid="cell-frame-title"]'];
+
+  // High confidence: a data-id attribute anywhere in the row yields an
+  // opaque hashed key; the raw WhatsApp attribute must never leak.
+  const rowWithID = element('row with data-id', chatRowSelectors, { 'data-id': '6281234567890@c.us' });
+  const withID = install({}).api.chatRowIdentity(rowWithID);
+  assert.equal(withID.status, 'found');
+  assert.equal(withID.kind, 'data-id');
+  assert.equal(withID.confidence, 'high');
+  assert.match(withID.key, /^chat:[0-9a-f]{16}$/);
+  assert.ok(!withID.key.includes('@'), 'the key must be opaque, not a raw JID');
+
+  // Deterministic and distinct per chat.
+  const sameAgain = install({}).api.chatRowIdentity(rowWithID);
+  assert.equal(sameAgain.key, withID.key);
+  const rowOther = element('other row', chatRowSelectors, { 'data-id': '6289999999999@c.us' });
+  assert.notEqual(install({}).api.chatRowIdentity(rowOther).key, withID.key);
+
+  // Medium confidence: title fallback is disclosed as such and changes on rename.
+  const titleEl = element('title', titleSelectors, { title: 'Budi' });
+  const rowWithTitle = element('row with title', chatRowSelectors, {}, { [titleSelectors[0]]: [titleEl] });
+  const withTitle = install({}).api.chatRowIdentity(rowWithTitle);
+  assert.equal(withTitle.status, 'found');
+  assert.equal(withTitle.kind, 'title-fallback');
+  assert.equal(withTitle.confidence, 'medium');
+  assert.match(withTitle.key, /^chat:[0-9a-f]{16}$/);
+  titleEl.setAttribute('title', 'Budi Kantor');
+  const renamed = install({}).api.chatRowIdentity(rowWithTitle);
+  assert.notEqual(renamed.key, withTitle.key, 'title-fallback keys must track the visible title');
+
+  // Missing: no data-id and no title must produce no key at all.
+  const blankRow = element('blank row', chatRowSelectors);
+  const missing = install({}).api.chatRowIdentity(blankRow);
+  assert.equal(missing.status, 'missing');
+  assert.equal(missing.key, '');
+
+  // chatRowByKey resolves the row for a stored key and fails closed on
+  // unknown or ambiguous matches.
+  const rowsAPI = install({ [chatRowSelectors[0]]: [rowWithID, rowOther] }).api;
+  const foundRow = rowsAPI.chatRowByKey(withID.key);
+  assert.equal(foundRow.status, 'found');
+  assert.equal(foundRow.key, withID.key);
+  assert.equal(rowsAPI.chatRowByKey('chat:deadbeefdeadbeef').status, 'missing');
+
+  // Ambiguity: two rows matching one key (hash collision fixture) fail closed.
+  const collisionRow = element('collision row', chatRowSelectors, { 'data-id': '6281234567890@c.us' });
+  const collisionAPI = install({ [chatRowSelectors[0]]: [rowWithID, collisionRow] }).api;
+  assert.equal(collisionAPI.chatRowByKey(withID.key).status, 'ambiguous');
+
+  // Message identity: data-id on the message wrapper is required.
+  const messageWrapper = element('message wrapper', [], { 'data-id': 'true_6281234567890@c.us_3EB0FDFE' });
+  const inner = element('message text');
+  inner.parentElement = messageWrapper;
+  const msgID = install({}).api.messageIdentity(inner);
+  assert.equal(msgID.status, 'found');
+  assert.equal(msgID.kind, 'data-id');
+  assert.equal(msgID.confidence, 'high');
+  assert.match(msgID.key, /^msg:[0-9a-f]{16}$/);
+  const noID = element('bare message');
+  noID.parentElement = null;
+  assert.equal(install({}).api.messageIdentity(noID).status, 'missing');
+
+  // Active conversation identity: title fallback from the open chat header.
+  const mainRoot = element('conversation root', ['#main'], {}, {
+    [titleSelectors[0]]: [element('header title', [], { title: 'Budi' })],
+  });
+  const headerTitleSelectors = ['#main header span[title]'];
+  const headerTitle = element('header title span', headerTitleSelectors, { title: 'Budi' });
+  const mainRoot2 = element('conversation root 2', ['#main'], {}, {
+    [headerTitleSelectors[0]]: [headerTitle],
+  });
+  const activeAPI = install({ '#main': [mainRoot2] }).api;
+  const active = activeAPI.activeChatIdentity();
+  assert.equal(active.status, 'found');
+  assert.equal(active.kind, 'title-fallback');
+  assert.equal(active.confidence, 'medium');
+  assert.equal(active.label, 'Budi');
+  assert.match(active.key, /^chat:[0-9a-f]{16}$/);
+  const noChatAPI = install({}).api;
+  assert.equal(noChatAPI.activeChatIdentity().status, 'missing');
+  assert.equal(noChatAPI.activeChatIdentity().key, '');
+
+  console.log('PASS: chat/message identity keys are opaque, confidence-tagged, deterministic, and fail closed on ambiguity');
+}
+
 run();
+runIdentity();

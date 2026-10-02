@@ -15,6 +15,10 @@ const (
 	AppEventProfileChanged       AppEventKind = "profile-changed"
 	AppEventLockChanged          AppEventKind = "lock-changed"
 	AppEventNotificationsChanged AppEventKind = "notifications-changed"
+	AppEventPinsChanged          AppEventKind = "pins-changed"
+	AppEventBookmarksChanged     AppEventKind = "bookmarks-changed"
+	AppEventLabelsChanged        AppEventKind = "labels-changed"
+	AppEventNotesChanged         AppEventKind = "notes-changed"
 )
 
 type AppStateSnapshot struct {

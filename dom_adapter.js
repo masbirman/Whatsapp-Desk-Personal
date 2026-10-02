@@ -208,11 +208,21 @@
 			'#main header [data-testid*="conversation-info-header-chat-subtitle"]',
 			'#main header span[title]'
 		],
-		privacyViewerMedia: [
-			'[data-testid="media-viewer"] img', '[data-testid="media-viewer"] video',
-			'[data-animate-media-viewer="true"] img', '[data-animate-media-viewer="true"] video'
-		],
-		pageTitle: ['title']
+	privacyViewerMedia: [
+		'[data-testid="media-viewer"] img', '[data-testid="media-viewer"] video',
+		'[data-animate-media-viewer="true"] img', '[data-animate-media-viewer="true"] video'
+	],
+	messageWrapper: [
+		'[data-testid="msg-container"]',
+		'div[data-id]',
+		'.message-in',
+		'.message-out'
+	],
+	conversationTitle: [
+		'#main header [data-testid*="conversation-info-header-chat-title"]',
+		'#main header span[title]'
+	],
+	pageTitle: ['title']
 	});
 
 	function selectorsFor(key) {
@@ -351,8 +361,109 @@
 		return found ? found.slice() : [];
 	}
 
+	// --- Local identity (M5-01) ------------------------------------------------
+	// Identity keys are opaque, adapter-issued strings. A stable WhatsApp
+	// attribute (data-id) yields high confidence; a visible-title fallback is
+	// explicitly medium and can be invalidated by a rename. The raw attribute
+	// is never returned or stored: only the hashed key leaves the adapter.
+	var ADAPTER_VERSION = 2;
+
+	function fnv1aHex(input, seed) {
+		var hash = seed >>> 0;
+		for (var i = 0; i < input.length; i++) {
+			hash ^= input.charCodeAt(i);
+			hash = (hash + ((hash << 1) >>> 0) + ((hash << 4) >>> 0) + ((hash << 7) >>> 0) + ((hash << 8) >>> 0) + ((hash << 24) >>> 0)) >>> 0;
+		}
+		return ('00000000' + hash.toString(16)).slice(-8);
+	}
+
+	function identityKey(kind, raw) {
+		return kind + ':' + fnv1aHex(raw, 0x811c9dc5) + fnv1aHex(raw, 0x01000193);
+	}
+
+	function visibleTitle(node) {
+		if (!node || typeof node.querySelectorAll !== 'function') return '';
+		var candidates = resolveAll('privacyChatNames', node);
+		var el = candidates.nodes.length ? candidates.nodes[0] : null;
+		var title = el ? (el.getAttribute('title') || el.textContent || '') : '';
+		title = String(title).replace(/\s+/g, ' ').trim();
+		return title.slice(0, 128);
+	}
+
+	function dataIdWithin(node) {
+		var current = node && node.nodeType === 1 ? node : null;
+		while (current) {
+			var value = current.getAttribute && current.getAttribute('data-id');
+			if (value) return String(value);
+			current = current.parentElement;
+		}
+		return '';
+	}
+
+	// Identity result contract: {status, key, kind, confidence, version}.
+	// status: found | ambiguous | missing. Ambiguous or missing inputs never
+	// produce a key, so callers cannot persist a wrong-chat reference.
+	function identityResult(status, key, kind, confidence) {
+		return {
+			status: status,
+			key: key || '',
+			kind: kind || '',
+			confidence: confidence || '',
+			version: ADAPTER_VERSION
+		};
+	}
+
+	function chatRowIdentity(row) {
+		var raw = dataIdWithin(row);
+		if (raw) return identityResult('found', identityKey('chat', 'data-id:' + raw), 'data-id', 'high');
+		var title = visibleTitle(row);
+		if (title) return identityResult('found', identityKey('chat', 'title:' + title), 'title-fallback', 'medium');
+		return identityResult('missing', '', '', '');
+	}
+
+	function chatRowByKey(key) {
+		if (!key || typeof key !== 'string') return identityResult('missing', '', '', '');
+		var rows = resolveAll('chatRow').nodes;
+		var matches = [];
+		for (var i = 0; i < rows.length; i++) {
+			var identity = chatRowIdentity(rows[i]);
+			if (identity.status === 'found' && identity.key === key) matches.push(rows[i]);
+		}
+		if (!matches.length) return identityResult('missing', '', '', '');
+		if (matches.length > 1) return identityResult('ambiguous', '', '', '');
+		return identityResult('found', key, chatRowIdentity(matches[0]).kind, chatRowIdentity(matches[0]).confidence);
+	}
+
+	function messageIdentity(node) {
+		var wrapper = closest(node, 'messageWrapper');
+		var target = wrapper.status === 'found' ? wrapper.node : node;
+		var raw = dataIdWithin(target);
+		if (raw) return identityResult('found', identityKey('msg', 'data-id:' + raw), 'data-id', 'high');
+		return identityResult('missing', '', '', '');
+	}
+
+	function activeChatIdentity() {
+		var root = resolveFirst('conversationRoot');
+		if (!root.node) return identityResult('missing', '', '', '');
+		var titles = resolveAll('conversationTitle', root.node).nodes;
+		var title = '';
+		for (var i = 0; i < titles.length; i++) {
+			title = (titles[i].getAttribute('title') || titles[i].textContent || '').replace(/\s+/g, ' ').trim();
+			if (title) break;
+		}
+		if (!title) return identityResult('missing', '', '', '');
+		return {
+			status: 'found',
+			key: identityKey('chat', 'title:' + title.slice(0, 128)),
+			kind: 'title-fallback',
+			confidence: 'medium',
+			label: title.slice(0, 128),
+			version: ADAPTER_VERSION
+		};
+	}
+
 	global.waDOM = Object.freeze({
-		version: 1,
+		version: ADAPTER_VERSION,
 		selectors: selectors,
 		resolveAll: resolveAll,
 		resolveOne: resolveOne,
@@ -360,6 +471,10 @@
 		resolveCandidates: resolveCandidates,
 		resolveCandidatesInDOMOrder: resolveCandidatesInDOMOrder,
 		resolveFirstInDOMOrder: resolveFirstInDOMOrder,
-		closest: closest
+		closest: closest,
+		chatRowIdentity: chatRowIdentity,
+		chatRowByKey: chatRowByKey,
+		messageIdentity: messageIdentity,
+		activeChatIdentity: activeChatIdentity
 	});
 })(window, document);
